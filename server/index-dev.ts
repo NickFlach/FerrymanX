@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { createServer as createViteServer, createLogger } from "vite";
 
 import runApp from "./app";
+import { startRelayer } from "./relayer";
 
 import viteConfig from "../vite.config";
 
@@ -62,4 +63,6 @@ export async function setupVite(app: Express, server: Server) {
 
 (async () => {
   await runApp(setupVite);
+  // Start relayer as background service
+  await startRelayer();
 })();
