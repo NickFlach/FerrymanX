@@ -146,14 +146,14 @@ async function pollBridges(): Promise<void> {
         const ethEvents = await ethFerry.queryFilter("BridgeOutRequested", fromBlock, ethBlock);
         
         for (const event of ethEvents) {
-          if (event.args) {
+          if ("args" in event && event.args) {
             await relayBridgeOut("ETH", {
-              from: event.args[0],
-              toOnOtherChain: event.args[1],
-              amountIn: event.args[2],
-              amountOut: event.args[3],
-              pforkFeePaid: event.args[4],
-              nonce: event.args[5],
+              from: event.args[0] as string,
+              toOnOtherChain: event.args[1] as string,
+              amountIn: event.args[2] as bigint,
+              amountOut: event.args[3] as bigint,
+              pforkFeePaid: event.args[4] as bigint,
+              nonce: event.args[5] as bigint,
             }, "NEOX");
           }
         }
@@ -166,14 +166,14 @@ async function pollBridges(): Promise<void> {
         const neoxEvents = await neoxFerry.queryFilter("BridgeOutRequested", fromBlock, neoxBlock);
         
         for (const event of neoxEvents) {
-          if (event.args) {
+          if ("args" in event && event.args) {
             await relayBridgeOut("NEOX", {
-              from: event.args[0],
-              toOnOtherChain: event.args[1],
-              amountIn: event.args[2],
-              amountOut: event.args[3],
-              pforkFeePaid: event.args[4],
-              nonce: event.args[5],
+              from: event.args[0] as string,
+              toOnOtherChain: event.args[1] as string,
+              amountIn: event.args[2] as bigint,
+              amountOut: event.args[3] as bigint,
+              pforkFeePaid: event.args[4] as bigint,
+              nonce: event.args[5] as bigint,
             }, "ETH");
           }
         }
