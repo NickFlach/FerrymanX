@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves } from "lucide-react";
+import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -11,50 +10,152 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-
-const PFORK_ETH = "0x536d...28FE";
-const PFORK_NEOX = "0x2164...60F";
+import { useWeb3, NetworkType } from "@/hooks/useWeb3";
+import { NETWORKS, CONTRACTS, ERC20_ABI, FERRY_ABI } from "@/lib/contracts";
+import { ethers } from "ethers";
 
 export default function Bridge() {
   const { toast } = useToast();
+  const { account, chainId, connect, isConnecting, switchNetwork, signer, provider } = useWeb3();
+  
   const [amount, setAmount] = useState("");
   const [direction, setDirection] = useState<"eth-neox" | "neox-eth">("eth-neox");
   const [isBridging, setIsBridging] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  const [txHash, setTxHash] = useState("");
+  const [balance, setBalance] = useState<string>("0.0");
+  const [allowance, setAllowance] = useState<string>("0.0");
+
+  // Determine current network context based on direction
+  const sourceNetwork: NetworkType = direction === "eth-neox" ? "ETH" : "NEOX";
+  const destNetwork: NetworkType = direction === "eth-neox" ? "NEOX" : "ETH";
+  
+  const sourceChainId = NETWORKS[sourceNetwork].chainId;
+  const isWrongNetwork = chainId !== sourceChainId;
+
+  const pforkAddress = CONTRACTS[sourceNetwork].PFORK;
+  const ferryAddress = CONTRACTS[sourceNetwork].FERRY;
+
+  // Fetch balance and allowance
+  useEffect(() => {
+    const fetchdata = async () => {
+      if (!account || !provider || isWrongNetwork) {
+        setBalance("0.0");
+        setAllowance("0.0");
+        return;
+      }
+
+      try {
+        const tokenContract = new ethers.Contract(pforkAddress, ERC20_ABI, provider);
+        
+        // Fetch balance
+        const bal = await tokenContract.balanceOf(account);
+        setBalance(ethers.formatUnits(bal, 18)); // Assuming 18 decimals
+
+        // Fetch allowance
+        const allow = await tokenContract.allowance(account, ferryAddress);
+        setAllowance(ethers.formatUnits(allow, 18));
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    };
+
+    fetchdata();
+    const interval = setInterval(fetchdata, 10000); // Refresh every 10s
+    return () => clearInterval(interval);
+  }, [account, provider, chainId, isWrongNetwork, pforkAddress, ferryAddress]);
+
+  const handleApprove = async () => {
+    if (!signer) return;
+    
+    try {
+      setIsApproving(true);
+      const tokenContract = new ethers.Contract(pforkAddress, ERC20_ABI, signer);
+      // Approve max uint256 for simplicity or specific amount
+      const tx = await tokenContract.approve(ferryAddress, ethers.MaxUint256);
+      await tx.wait();
+      
+      toast({
+        title: "Approved!",
+        description: "You can now bridge your tokens.",
+      });
+      
+      // Refresh allowance immediately
+      const allow = await tokenContract.allowance(account, ferryAddress);
+      setAllowance(ethers.formatUnits(allow, 18));
+      
+    } catch (error: any) {
+      console.error("Approval error:", error);
+      toast({
+        title: "Approval Failed",
+        description: error.message || "Transaction rejected.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsApproving(false);
+    }
+  };
 
   const handleBridge = async () => {
     if (!amount || parseFloat(amount) <= 0) {
-      toast({
-        title: "Invalid Amount",
-        description: "Please enter a valid amount of PFORK to bridge.",
-        variant: "destructive",
-      });
+      toast({ title: "Invalid Amount", description: "Enter a valid amount.", variant: "destructive" });
       return;
     }
 
-    if (!isConnected) {
-      toast({
-        title: "Wallet Not Connected",
-        description: "Please connect your wallet first.",
-        variant: "destructive",
-      });
+    if (isWrongNetwork) {
+      switchNetwork(sourceNetwork);
       return;
     }
 
-    setIsBridging(true);
-    
-    // Simulate bridging delay
-    setTimeout(() => {
-      setIsBridging(false);
+    if (!signer) {
+      connect();
+      return;
+    }
+
+    try {
+      setIsBridging(true);
+      const ferryContract = new ethers.Contract(ferryAddress, FERRY_ABI, signer);
+      const amountWei = ethers.parseUnits(amount, 18);
+
+      // Call bridgeOut(amount, toOnOtherChain)
+      // We send to the same address on the other chain
+      const tx = await ferryContract.bridgeOut(amountWei, account);
+      
+      console.log("Bridge tx submitted:", tx.hash);
+      setTxHash(tx.hash);
+      
+      await tx.wait();
+      
       setShowSuccess(true);
       setAmount("");
-    }, 3000);
+      
+      // Refresh balance
+      const tokenContract = new ethers.Contract(pforkAddress, ERC20_ABI, provider);
+      const bal = await tokenContract.balanceOf(account);
+      setBalance(ethers.formatUnits(bal, 18));
+
+    } catch (error: any) {
+      console.error("Bridge error:", error);
+      toast({
+        title: "Bridge Failed",
+        description: error.message || "Transaction rejected.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsBridging(false);
+    }
   };
 
   const toggleDirection = () => {
     setDirection(prev => prev === "eth-neox" ? "neox-eth" : "eth-neox");
+    // Optional: prompt switch network immediately
+    // if (chainId !== NETWORKS[prev === "eth-neox" ? "NEOX" : "ETH"].chainId) {
+    //   switchNetwork(prev === "eth-neox" ? "NEOX" : "ETH");
+    // }
   };
+
+  const needsApproval = parseFloat(allowance) < (parseFloat(amount) || 0);
 
   return (
     <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col">
@@ -74,12 +175,13 @@ export default function Bridge() {
         </div>
         
         <Button 
-          variant={isConnected ? "outline" : "default"}
-          className={`font-space tracking-wide ${isConnected ? "border-primary/50 text-primary hover:bg-primary/10" : "bg-primary text-background hover:bg-primary/90"}`}
-          onClick={() => setIsConnected(!isConnected)}
+          variant={account ? "outline" : "default"}
+          className={`font-space tracking-wide ${account ? "border-primary/50 text-primary hover:bg-primary/10" : "bg-primary text-background hover:bg-primary/90"}`}
+          onClick={() => account ? null : connect()}
+          disabled={isConnecting}
         >
           <Wallet className="w-4 h-4 mr-2" />
-          {isConnected ? "0x1234...5678" : "Connect Wallet"}
+          {isConnecting ? "Connecting..." : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Connect Wallet"}
         </Button>
       </header>
 
@@ -99,8 +201,8 @@ export default function Bridge() {
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-xl font-cinzel text-gray-300">Bridge Assets</h2>
               <div className="flex items-center gap-2 text-xs font-space text-gray-500 uppercase tracking-widest">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                System Online
+                <div className={`w-2 h-2 rounded-full ${isWrongNetwork ? "bg-red-500" : "bg-green-500"} animate-pulse`} />
+                {isWrongNetwork ? "Wrong Network" : "System Online"}
               </div>
             </div>
 
@@ -110,7 +212,7 @@ export default function Bridge() {
               <div className={`p-4 rounded-xl border transition-colors ${direction === "eth-neox" ? "bg-blue-950/30 border-blue-500/30" : "bg-green-950/30 border-green-500/30"}`}>
                 <div className="flex justify-between mb-2">
                   <span className="text-xs text-gray-400 font-space uppercase">From Network</span>
-                  <span className="text-xs text-gray-400 font-space">Balance: {isConnected ? "1,500.00" : "-"}</span>
+                  <span className="text-xs text-gray-400 font-space">Balance: {balance}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${direction === "eth-neox" ? "bg-blue-600" : "bg-green-600"}`}>
@@ -121,7 +223,7 @@ export default function Bridge() {
                   </span>
                 </div>
                 <div className="mt-2 text-[10px] text-gray-500 font-mono truncate">
-                  Contract: {direction === "eth-neox" ? PFORK_ETH : PFORK_NEOX}
+                  Contract: {pforkAddress}
                 </div>
               </div>
 
@@ -151,7 +253,7 @@ export default function Bridge() {
                   </span>
                 </div>
                 <div className="mt-2 text-[10px] text-gray-500 font-mono truncate">
-                  Contract: {direction === "eth-neox" ? PFORK_NEOX : PFORK_ETH}
+                   Contract: {CONTRACTS[destNetwork].PFORK}
                 </div>
               </div>
             </div>
@@ -160,10 +262,10 @@ export default function Bridge() {
             <div className="mb-8">
               <div className="flex justify-between mb-2">
                 <label className="text-xs text-gray-400 font-space uppercase">Amount to Send</label>
-                {isConnected && (
+                {account && (
                   <button 
                     className="text-xs text-primary hover:text-primary/80 font-space uppercase"
-                    onClick={() => setAmount("1500")}
+                    onClick={() => setAmount(balance)}
                   >
                     Max
                   </button>
@@ -184,39 +286,66 @@ export default function Bridge() {
             </div>
 
             {/* Action Button */}
-            <Button 
-              size="lg" 
-              className="w-full h-14 bg-primary text-background font-bold font-cinzel text-lg hover:bg-primary/90 hover:scale-[1.02] transition-all relative overflow-hidden"
-              onClick={handleBridge}
-              disabled={isBridging}
-            >
-              {isBridging ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 border-2 border-background/30 border-t-background rounded-full animate-spin" />
-                  Ferrying...
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Waves className="w-5 h-5" />
-                  Pay the Ferryman
-                </div>
-              )}
-            </Button>
+            {isWrongNetwork ? (
+              <Button 
+                size="lg" 
+                className="w-full h-14 bg-destructive text-white font-bold font-cinzel text-lg hover:bg-destructive/90"
+                onClick={() => switchNetwork(sourceNetwork)}
+              >
+                Switch to {NETWORKS[sourceNetwork].name}
+              </Button>
+            ) : needsApproval ? (
+               <Button 
+                size="lg" 
+                className="w-full h-14 bg-secondary text-white font-bold font-cinzel text-lg hover:bg-secondary/90"
+                onClick={handleApprove}
+                disabled={isApproving || !amount}
+              >
+                 {isApproving ? "Approving..." : "Approve PFORK"}
+              </Button>
+            ) : (
+              <Button 
+                size="lg" 
+                className="w-full h-14 bg-primary text-background font-bold font-cinzel text-lg hover:bg-primary/90 hover:scale-[1.02] transition-all relative overflow-hidden"
+                onClick={handleBridge}
+                disabled={isBridging || !amount}
+              >
+                {isBridging ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+                    Ferrying...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Waves className="w-5 h-5" />
+                    Pay the Ferryman
+                  </div>
+                )}
+              </Button>
+            )}
 
             {/* Fee Info */}
             <div className="mt-6 flex justify-between items-center text-xs text-gray-500 font-mono">
-              <span>Relayer Fee: ~0.001 ETH</span>
-              <span>Est. Time: 2 mins</span>
+              <span>Relayer Fee: Free (Testnet)</span>
+              <span>Est. Time: ~2 mins</span>
             </div>
 
           </div>
 
           {/* Helper Links */}
           <div className="mt-8 flex justify-center gap-6">
-            <a href="#" className="text-gray-500 hover:text-primary text-xs font-space uppercase tracking-widest flex items-center gap-2 transition-colors">
-              <History className="w-4 h-4" /> History
+             <a 
+                href={`${NETWORKS[sourceNetwork].explorer}/address/${ferryAddress}`}
+                target="_blank" 
+                rel="noreferrer"
+                className="text-gray-500 hover:text-primary text-xs font-space uppercase tracking-widest flex items-center gap-2 transition-colors"
+              >
+              <History className="w-4 h-4" /> Contract
             </a>
-            <a href="#" className="text-gray-500 hover:text-primary text-xs font-space uppercase tracking-widest flex items-center gap-2 transition-colors">
+            <a 
+                href="#" 
+                className="text-gray-500 hover:text-primary text-xs font-space uppercase tracking-widest flex items-center gap-2 transition-colors"
+            >
               <ShieldCheck className="w-4 h-4" /> Audit
             </a>
           </div>
@@ -242,8 +371,16 @@ export default function Bridge() {
                 <span className="text-green-400">Processing</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500 font-mono">
-                <span>Message ID</span>
-                <span className="truncate w-32 text-right">0x8f...3a1</span>
+                <span>Transaction</span>
+                <a 
+                  href={`${NETWORKS[sourceNetwork].explorer}/tx/${txHash}`} 
+                  target="_blank"
+                  rel="noreferrer"
+                  className="truncate w-32 text-right text-primary hover:underline flex items-center gap-1 ml-auto"
+                >
+                  {txHash.slice(0, 6)}...{txHash.slice(-4)}
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
             </div>
             <Button 
