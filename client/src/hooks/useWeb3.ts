@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { NETWORKS, CONTRACTS, FERRY_ABI, ERC20_ABI } from "../lib/contracts";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 
 export type NetworkType = "ETH" | "NEOX";
 
@@ -13,6 +14,7 @@ declare global {
 
 export function useWeb3() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [account, setAccount] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
@@ -52,6 +54,18 @@ export function useWeb3() {
     }
   }, [toast]);
 
+  const disconnect = useCallback(() => {
+    setAccount(null);
+    setChainId(null);
+    setProvider(null);
+    setSigner(null);
+    setLocation("/"); // Redirect to landing
+    toast({
+      title: "Disconnected",
+      description: "Wallet disconnected successfully.",
+    });
+  }, [setLocation, toast]);
+
   const switchNetwork = useCallback(async (targetNetwork: NetworkType) => {
     if (!window.ethereum) return;
 
@@ -64,7 +78,6 @@ export function useWeb3() {
         params: [{ chainId: targetChainIdHex }],
       });
     } catch (error: any) {
-      // This error code indicates that the chain has not been added to MetaMask.
       if (error.code === 4902) {
         try {
           await window.ethereum.request({
@@ -85,22 +98,10 @@ export function useWeb3() {
           });
         } catch (addError) {
           console.error("Failed to add network:", addError);
-          toast({
-            title: "Failed to add network",
-            description: "Please add the network manually.",
-            variant: "destructive",
-          });
         }
-      } else {
-        console.error("Failed to switch network:", error);
-        toast({
-          title: "Failed to switch network",
-          description: "Please switch manually in your wallet.",
-          variant: "destructive",
-        });
       }
     }
-  }, [toast]);
+  }, []);
 
   // Listen for account/chain changes
   useEffect(() => {
@@ -115,7 +116,6 @@ export function useWeb3() {
 
       window.ethereum.on("chainChanged", (chainIdHex: string) => {
         setChainId(parseInt(chainIdHex, 16));
-        // Reload provider/signer on chain change
         if (window.ethereum) {
             const browserProvider = new ethers.BrowserProvider(window.ethereum);
             browserProvider.getSigner().then(setSigner);
@@ -124,20 +124,12 @@ export function useWeb3() {
       });
     }
     
-    // Attempt to check if already connected
-    const checkConnection = async () => {
-        if(window.ethereum && window.ethereum.selectedAddress) {
-             connect();
-        }
-    }
-    checkConnection();
-    
     return () => {
         if(window.ethereum) {
              window.ethereum.removeAllListeners();
         }
     }
-  }, [connect]);
+  }, []);
 
   return {
     account,
@@ -145,6 +137,7 @@ export function useWeb3() {
     provider,
     signer,
     connect,
+    disconnect,
     isConnecting,
     switchNetwork,
   };

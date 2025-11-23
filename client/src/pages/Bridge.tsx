@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves, ExternalLink } from "lucide-react";
+import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves, ExternalLink, CheckCircle2, Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,7 +16,7 @@ import { ethers } from "ethers";
 
 export default function Bridge() {
   const { toast } = useToast();
-  const { account, chainId, connect, isConnecting, switchNetwork, signer, provider } = useWeb3();
+  const { account, chainId, connect, disconnect, isConnecting, switchNetwork, signer, provider } = useWeb3();
   
   const [amount, setAmount] = useState("");
   const [direction, setDirection] = useState<"eth-neox" | "neox-eth">("eth-neox");
@@ -26,6 +26,10 @@ export default function Bridge() {
   const [txHash, setTxHash] = useState("");
   const [balance, setBalance] = useState<string>("0.0");
   const [allowance, setAllowance] = useState<string>("0.0");
+  
+  // Live Tracking State
+  const [trackerState, setTrackerState] = useState<"idle" | "processing" | "bridged" | "relaying" | "complete">("idle");
+  const [destinationTxHash, setDestinationTxHash] = useState("");
 
   // Determine current network context based on direction
   const sourceNetwork: NetworkType = direction === "eth-neox" ? "ETH" : "NEOX";
@@ -65,6 +69,45 @@ export default function Bridge() {
     const interval = setInterval(fetchdata, 10000); // Refresh every 10s
     return () => clearInterval(interval);
   }, [account, provider, chainId, isWrongNetwork, pforkAddress, ferryAddress]);
+
+  // Tracker Logic: Listen for Destination Events
+  // Note: In a real production app, we would use a WebSocket provider or indexer for the destination chain.
+  // Since we only have standard RPCs, we can poll for events on the destination chain.
+  useEffect(() => {
+    if (trackerState !== "bridged" && trackerState !== "relaying") return;
+
+    const pollDestination = async () => {
+      try {
+        // Create a provider for the destination chain (read-only)
+        const destProvider = new ethers.JsonRpcProvider(NETWORKS[destNetwork].rpc);
+        const destFerryAddress = CONTRACTS[destNetwork].FERRY;
+        const destFerry = new ethers.Contract(destFerryAddress, [
+          "event BridgeInFulfilled(address indexed to, uint256 amount, bytes32 indexed messageId)"
+        ], destProvider);
+
+        console.log(`Listening for BridgeIn on ${destNetwork}...`);
+
+        // In a real app, we would filter by our specific messageId.
+        // For this demo, we'll just listen for ANY event to 'to' address (our account)
+        const filter = destFerry.filters.BridgeInFulfilled(account);
+        
+        const logs = await destFerry.queryFilter(filter, -100); // Check last 100 blocks
+        
+        if (logs.length > 0) {
+          const lastLog = logs[logs.length - 1];
+          console.log("Bridge In Detected!", lastLog.transactionHash);
+          setDestinationTxHash(lastLog.transactionHash);
+          setTrackerState("complete");
+        }
+      } catch (error) {
+        console.error("Error polling destination:", error);
+      }
+    };
+
+    const interval = setInterval(pollDestination, 5000);
+    return () => clearInterval(interval);
+  }, [trackerState, destNetwork, account]);
+
 
   const handleApprove = async () => {
     if (!signer) return;
@@ -115,11 +158,12 @@ export default function Bridge() {
 
     try {
       setIsBridging(true);
+      setTrackerState("processing");
+      
       const ferryContract = new ethers.Contract(ferryAddress, FERRY_ABI, signer);
       const amountWei = ethers.parseUnits(amount, 18);
 
       // Call bridgeOut(amount, toOnOtherChain)
-      // We send to the same address on the other chain
       const tx = await ferryContract.bridgeOut(amountWei, account);
       
       console.log("Bridge tx submitted:", tx.hash);
@@ -127,7 +171,8 @@ export default function Bridge() {
       
       await tx.wait();
       
-      setShowSuccess(true);
+      setTrackerState("bridged"); // Source tx confirmed
+      setShowSuccess(true); // Show modal
       setAmount("");
       
       // Refresh balance
@@ -135,8 +180,14 @@ export default function Bridge() {
       const bal = await tokenContract.balanceOf(account);
       setBalance(ethers.formatUnits(bal, 18));
 
+      // Simulate "Relaying" state after a few seconds if real event doesn't fire immediately
+      setTimeout(() => {
+          if (trackerState === "bridged") setTrackerState("relaying");
+      }, 5000);
+
     } catch (error: any) {
       console.error("Bridge error:", error);
+      setTrackerState("idle");
       toast({
         title: "Bridge Failed",
         description: error.message || "Transaction rejected.",
@@ -149,13 +200,22 @@ export default function Bridge() {
 
   const toggleDirection = () => {
     setDirection(prev => prev === "eth-neox" ? "neox-eth" : "eth-neox");
-    // Optional: prompt switch network immediately
-    // if (chainId !== NETWORKS[prev === "eth-neox" ? "NEOX" : "ETH"].chainId) {
-    //   switchNetwork(prev === "eth-neox" ? "NEOX" : "ETH");
-    // }
   };
 
   const needsApproval = parseFloat(allowance) < (parseFloat(amount) || 0);
+
+  // Render Tracker Step
+  const Step = ({ status, label, stepNum }: { status: "pending" | "active" | "complete", label: string, stepNum: number }) => (
+    <div className={`flex flex-col items-center gap-2 ${status === "pending" ? "opacity-50" : "opacity-100"}`}>
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 
+        ${status === "complete" ? "bg-primary border-primary text-background" : 
+          status === "active" ? "bg-primary/20 border-primary text-primary animate-pulse" : 
+          "bg-transparent border-gray-600 text-gray-600"}`}>
+        {status === "complete" ? <CheckCircle2 className="w-5 h-5" /> : status === "active" ? <Loader2 className="w-4 h-4 animate-spin" /> : stepNum}
+      </div>
+      <span className="text-[10px] font-mono uppercase tracking-wider">{label}</span>
+    </div>
+  );
 
   return (
     <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col">
@@ -174,15 +234,28 @@ export default function Bridge() {
           </h1>
         </div>
         
-        <Button 
-          variant={account ? "outline" : "default"}
-          className={`font-space tracking-wide ${account ? "border-primary/50 text-primary hover:bg-primary/10" : "bg-primary text-background hover:bg-primary/90"}`}
-          onClick={() => account ? null : connect()}
-          disabled={isConnecting}
-        >
-          <Wallet className="w-4 h-4 mr-2" />
-          {isConnecting ? "Connecting..." : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Connect Wallet"}
-        </Button>
+        <div className="flex items-center gap-4">
+            {account && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-gray-400 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={disconnect}
+                    title="Disconnect Wallet"
+                >
+                    <LogOut className="w-5 h-5" />
+                </Button>
+            )}
+            <Button 
+            variant={account ? "outline" : "default"}
+            className={`font-space tracking-wide ${account ? "border-primary/50 text-primary hover:bg-primary/10" : "bg-primary text-background hover:bg-primary/90"}`}
+            onClick={() => account ? null : connect()}
+            disabled={isConnecting}
+            >
+            <Wallet className="w-4 h-4 mr-2" />
+            {isConnecting ? "Connecting..." : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Connect Wallet"}
+            </Button>
+        </div>
       </header>
 
       {/* Main Content */}
@@ -205,6 +278,44 @@ export default function Bridge() {
                 {isWrongNetwork ? "Wrong Network" : "System Online"}
               </div>
             </div>
+
+            {/* Live Tracker (Visible when active) */}
+            <AnimatePresence>
+                {trackerState !== "idle" && (
+                    <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="mb-8 bg-black/20 rounded-lg p-4 border border-white/5"
+                    >
+                        <div className="flex justify-between items-center px-4">
+                            <Step 
+                                stepNum={1} 
+                                label="Bridge Out" 
+                                status={trackerState === "processing" ? "active" : "complete"} 
+                            />
+                            <div className={`flex-1 h-[1px] mx-2 ${trackerState === "processing" ? "bg-gray-700" : "bg-primary"}`} />
+                            <Step 
+                                stepNum={2} 
+                                label="Relayer" 
+                                status={trackerState === "processing" ? "pending" : trackerState === "bridged" || trackerState === "relaying" ? "active" : "complete"} 
+                            />
+                             <div className={`flex-1 h-[1px] mx-2 ${trackerState === "complete" ? "bg-primary" : "bg-gray-700"}`} />
+                            <Step 
+                                stepNum={3} 
+                                label="Bridge In" 
+                                status={trackerState === "complete" ? "complete" : "pending"} 
+                            />
+                        </div>
+                        <div className="text-center mt-4 text-[10px] text-gray-400 font-mono">
+                            {trackerState === "processing" && "Signing transaction on Source Chain..."}
+                            {(trackerState === "bridged" || trackerState === "relaying") && "Waiting for Relayer to pickup (requires external node)..."}
+                            {trackerState === "complete" && "Bridge Complete! Tokens arrived."}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
 
             {/* Route Selector */}
             <div className="relative flex flex-col gap-4 mb-8">
@@ -295,33 +406,41 @@ export default function Bridge() {
                 Switch to {NETWORKS[sourceNetwork].name}
               </Button>
             ) : needsApproval ? (
-               <Button 
-                size="lg" 
-                className="w-full h-14 bg-secondary text-white font-bold font-cinzel text-lg hover:bg-secondary/90"
-                onClick={handleApprove}
-                disabled={isApproving || !amount}
-              >
-                 {isApproving ? "Approving..." : "Approve PFORK"}
-              </Button>
+                <div className="flex flex-col gap-2">
+                   <div className="flex items-center justify-between text-xs text-gray-400 px-1">
+                        <span>Step 1 of 2: Approve Tokens</span>
+                   </div>
+                    <Button 
+                        size="lg" 
+                        className="w-full h-14 bg-secondary text-white font-bold font-cinzel text-lg hover:bg-secondary/90"
+                        onClick={handleApprove}
+                        disabled={isApproving || !amount}
+                    >
+                        {isApproving ? "Approving..." : "Approve PFORK"}
+                    </Button>
+                </div>
             ) : (
-              <Button 
-                size="lg" 
-                className="w-full h-14 bg-primary text-background font-bold font-cinzel text-lg hover:bg-primary/90 hover:scale-[1.02] transition-all relative overflow-hidden"
-                onClick={handleBridge}
-                disabled={isBridging || !amount}
-              >
-                {isBridging ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 border-2 border-background/30 border-t-background rounded-full animate-spin" />
-                    Ferrying...
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Waves className="w-5 h-5" />
-                    Pay the Ferryman
-                  </div>
-                )}
-              </Button>
+              <div className="flex flex-col gap-2">
+                  {/* Only show step info if we had to approve previously, or just show generic action */}
+                   <Button 
+                    size="lg" 
+                    className="w-full h-14 bg-primary text-background font-bold font-cinzel text-lg hover:bg-primary/90 hover:scale-[1.02] transition-all relative overflow-hidden"
+                    onClick={handleBridge}
+                    disabled={isBridging || !amount}
+                >
+                    {isBridging ? (
+                    <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+                        Ferrying...
+                    </div>
+                    ) : (
+                    <div className="flex items-center gap-2">
+                        <Waves className="w-5 h-5" />
+                        Pay the Ferryman
+                    </div>
+                    )}
+                </Button>
+              </div>
             )}
 
             {/* Fee Info */}
@@ -356,22 +475,22 @@ export default function Bridge() {
       <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
         <DialogContent className="glass-panel border-primary/20 text-white sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-center font-cinzel text-2xl text-primary">Safe Passage!</DialogTitle>
+            <DialogTitle className="text-center font-cinzel text-2xl text-primary">Passage Booked!</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center py-6 space-y-4">
             <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mb-4">
               <Ship className="w-10 h-10 text-primary animate-pulse" />
             </div>
             <p className="text-center text-gray-300 font-space">
-              Your <span className="text-white font-bold">{amount} PFORK</span> are crossing the river.
+              Your <span className="text-white font-bold">{amount} PFORK</span> have boarded the ferry.
             </p>
             <div className="w-full bg-black/30 p-4 rounded-lg mt-4">
               <div className="flex justify-between text-xs text-gray-500 mb-2 font-mono">
                 <span>Status</span>
-                <span className="text-green-400">Processing</span>
+                <span className="text-green-400">Waiting for Relayer...</span>
               </div>
-              <div className="flex justify-between text-xs text-gray-500 font-mono">
-                <span>Transaction</span>
+              <div className="flex justify-between text-xs text-gray-500 font-mono mb-2">
+                <span>Bridge Out Tx</span>
                 <a 
                   href={`${NETWORKS[sourceNetwork].explorer}/tx/${txHash}`} 
                   target="_blank"
@@ -382,12 +501,29 @@ export default function Bridge() {
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
+               {destinationTxHash && (
+                   <div className="flex justify-between text-xs text-gray-500 font-mono">
+                    <span>Bridge In Tx</span>
+                    <a 
+                    href={`${NETWORKS[destNetwork].explorer}/tx/${destinationTxHash}`} 
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate w-32 text-right text-green-400 hover:underline flex items-center gap-1 ml-auto"
+                    >
+                    {destinationTxHash.slice(0, 6)}...{destinationTxHash.slice(-4)}
+                    <ExternalLink className="w-3 h-3" />
+                    </a>
+                </div>
+               )}
+            </div>
+            <div className="text-xs text-gray-500 text-center mt-2">
+                Please keep this window open to track progress, or check your wallet on the destination chain.
             </div>
             <Button 
               className="w-full mt-6 bg-white/10 hover:bg-white/20 text-white font-space"
               onClick={() => setShowSuccess(false)}
             >
-              Close
+              Keep Tracking
             </Button>
           </div>
         </DialogContent>
