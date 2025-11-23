@@ -25,12 +25,14 @@ export function computeMessageId(
   nonce: string,
   from: string,
   toOnOther: string,
-  amountOut: string
+  amountIn: string,
+  amountOut: string,
+  nativeFee: string
 ): string {
   return ethers.keccak256(
     ethers.solidityPacked(
-      ["uint16", "uint16", "address", "uint256", "address", "address", "uint256"],
-      [srcChainId, dstChainId, srcFerry, nonce, from, toOnOther, amountOut]
+      ["uint16", "uint16", "address", "uint256", "address", "address", "uint256", "uint256", "uint256"],
+      [srcChainId, dstChainId, srcFerry, nonce, from, toOnOther, amountIn, amountOut, nativeFee]
     )
   );
 }

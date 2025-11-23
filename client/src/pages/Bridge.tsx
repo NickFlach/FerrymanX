@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves, ExternalLink, CheckCircle2, Loader2, LogOut, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,10 @@ export default function Bridge() {
 
   const pforkAddress = CONTRACTS[sourceNetwork].PFORK;
   const ferryAddress = CONTRACTS[sourceNetwork].FERRY;
+
+  // Create cached providers to prevent connection leaks
+  const ethProvider = useMemo(() => new ethers.JsonRpcProvider(NETWORKS.ETH.rpc), []);
+  const neoxProvider = useMemo(() => new ethers.JsonRpcProvider(NETWORKS.NEOX.rpc), []);
 
   // Fetch balance, allowance, and native fee
   useEffect(() => {
@@ -102,7 +106,7 @@ export default function Bridge() {
     const checkStatus = async () => {
       for (const bridge of pendingBridges) {
         try {
-          const destProvider = new ethers.JsonRpcProvider(NETWORKS[bridge.destChain].rpc);
+          const destProvider = bridge.destChain === "ETH" ? ethProvider : neoxProvider;
           const destFerry = new ethers.Contract(
             CONTRACTS[bridge.destChain].FERRY,
             FERRY_ABI,
@@ -128,7 +132,7 @@ export default function Bridge() {
     checkStatus();
     const interval = setInterval(checkStatus, 15000); // Check every 15s
     return () => clearInterval(interval);
-  }, [pendingBridges, account]);
+  }, [pendingBridges, account, ethProvider, neoxProvider]);
 
 
   const handleApprove = async () => {
@@ -207,7 +211,7 @@ export default function Bridge() {
         .find((parsed: any) => parsed?.name === "BridgeOutRequested");
 
       if (event) {
-        const { from, toOnOtherChain, amountOut, nonce } = event.args;
+        const { from, toOnOtherChain, amountIn, amountOut, nonce } = event.args;
         
         // Compute messageId
         const srcChainId = NETWORKS[sourceNetwork].chainId;
@@ -219,7 +223,9 @@ export default function Bridge() {
           nonce.toString(),
           from,
           toOnOtherChain,
-          amountOut.toString()
+          amountIn.toString(),
+          amountOut.toString(),
+          nativeFee
         );
 
         // Save to localStorage
@@ -275,11 +281,12 @@ export default function Bridge() {
     
     // Check if on correct destination network
     if (chainId !== correctChainId) {
-      toast({
-        title: "Switch Network",
-        description: `Please switch to ${NETWORKS[bridge.destChain].name} to claim your tokens.`,
-      });
       switchNetwork(bridge.destChain);
+      toast({
+        title: "Network Switch Required",
+        description: `Switching to ${NETWORKS[bridge.destChain].name}. After switching, click the claim button again to complete the claim.`,
+        duration: 5000,
+      });
       return;
     }
 
