@@ -36,7 +36,6 @@ export default function Bridge() {
   const [nativeFee, setNativeFee] = useState<string>("0");
   const [pendingBridges, setPendingBridges] = useState<PendingBridge[]>([]);
   const [isClaiming, setIsClaiming] = useState<string | null>(null);
-  const [claimDestNetwork, setClaimDestNetwork] = useState<NetworkType | null>(null);
 
   // Determine current network context based on direction
   const sourceNetwork: NetworkType = direction === "eth-neox" ? "ETH" : "NEOX";
@@ -276,7 +275,10 @@ export default function Bridge() {
     
     // Check if on correct destination network
     if (chainId !== correctChainId) {
-      setClaimDestNetwork(bridge.destChain);
+      toast({
+        title: "Switch Network",
+        description: `Please switch to ${NETWORKS[bridge.destChain].name} to claim your tokens.`,
+      });
       switchNetwork(bridge.destChain);
       return;
     }
@@ -326,7 +328,6 @@ export default function Bridge() {
       });
     } finally {
       setIsClaiming(null);
-      setClaimDestNetwork(null);
     }
   };
 
@@ -571,7 +572,7 @@ export default function Bridge() {
               <div className="space-y-3">
                 {pendingBridges.map((bridge) => {
                   const isClaimingThis = isClaiming === bridge.messageId;
-                  const needsNetworkSwitch = claimDestNetwork === bridge.destChain && chainId !== NETWORKS[bridge.destChain].chainId;
+                  const isOnCorrectNetwork = chainId === NETWORKS[bridge.destChain].chainId;
                   
                   return (
                     <div 
@@ -610,6 +611,12 @@ export default function Bridge() {
                         </a>
                       </div>
 
+                      {!isOnCorrectNetwork && (
+                        <div className="mb-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 rounded text-[10px] text-amber-400 font-space text-center">
+                          Switch to {NETWORKS[bridge.destChain].name} to claim
+                        </div>
+                      )}
+
                       <Button
                         size="sm"
                         className="w-full bg-primary text-background font-bold font-space hover:bg-primary/90"
@@ -622,8 +629,6 @@ export default function Bridge() {
                             <Loader2 className="w-4 h-4 animate-spin" />
                             Claiming...
                           </div>
-                        ) : needsNetworkSwitch ? (
-                          `Switch to ${NETWORKS[bridge.destChain].name}`
                         ) : (
                           `Claim on ${NETWORKS[bridge.destChain].name}`
                         )}
