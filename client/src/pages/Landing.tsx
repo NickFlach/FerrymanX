@@ -104,10 +104,50 @@ export default function Landing() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 2, duration: 1 }}
-          className="absolute bottom-10 text-gray-500 text-sm font-space uppercase tracking-widest flex items-center gap-2"
+          className="absolute bottom-10 flex flex-col items-center gap-4"
         >
-          <Anchor className="w-4 h-4" />
-          Safe Passage Guaranteed
+          <div className="text-gray-500 text-sm font-space uppercase tracking-widest flex items-center gap-2">
+            <Anchor className="w-4 h-4" />
+            Safe Passage Guaranteed
+          </div>
+          <div className="flex items-center gap-3 text-[10px] text-gray-600 uppercase tracking-wider font-space">
+            <span className="text-gray-500">Ecosystem:</span>
+            <a 
+              href="https://dex.pitchforks.social" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-primary hover:text-primary/80 hover:underline transition-colors"
+            >
+              DEX
+            </a>
+            <span>|</span>
+            <a 
+              href="https://protocol.pitchforks.social" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-primary hover:text-primary/80 hover:underline transition-colors"
+            >
+              Protocol
+            </a>
+            <span>|</span>
+            <a 
+              href="https://analyst.pitchforks.social" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-primary hover:text-primary/80 hover:underline transition-colors"
+            >
+              Analyst
+            </a>
+            <span>|</span>
+            <a 
+              href="https://app.pitchforks.social" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-primary hover:text-primary/80 hover:underline transition-colors"
+            >
+              App
+            </a>
+          </div>
         </motion.div>
       </div>
     </div>

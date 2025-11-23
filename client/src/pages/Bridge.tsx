@@ -353,7 +353,7 @@ export default function Bridge() {
       </div>
 
       {/* Header */}
-      <header className="relative z-10 w-full px-6 py-6 flex justify-between items-center border-b border-white/5 backdrop-blur-sm">
+      <header className="relative z-10 w-full px-6 py-6 flex flex-col md:flex-row justify-between items-center border-b border-white/5 backdrop-blur-sm gap-4">
         <div className="flex items-center gap-3">
           <Ship className="w-8 h-8 text-primary" />
           <h1 className="text-2xl font-cinzel font-bold text-white tracking-wider">
@@ -361,27 +361,72 @@ export default function Bridge() {
           </h1>
         </div>
         
-        <div className="flex items-center gap-4">
-            {account && (
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-gray-400 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                    onClick={disconnect}
-                    title="Disconnect Wallet"
-                >
-                    <LogOut className="w-5 h-5" />
-                </Button>
-            )}
-            <Button 
+        <div className="flex items-center gap-3 md:gap-4 flex-wrap justify-center">
+          <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider font-space border-r border-white/10 pr-4">
+            <span className="text-gray-400">Pitchforks:</span>
+            <a 
+              href="https://dex.pitchforks.social" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-primary hover:text-primary/80 hover:underline transition-colors"
+              data-testid="link-dex"
+            >
+              DEX
+            </a>
+            <span className="text-gray-600">|</span>
+            <a 
+              href="https://protocol.pitchforks.social" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-primary hover:text-primary/80 hover:underline transition-colors"
+              data-testid="link-protocol"
+            >
+              Protocol
+            </a>
+            <span className="text-gray-600">|</span>
+            <a 
+              href="https://analyst.pitchforks.social" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-primary hover:text-primary/80 hover:underline transition-colors"
+              data-testid="link-analyst"
+            >
+              Analyst
+            </a>
+            <span className="text-gray-600">|</span>
+            <a 
+              href="https://app.pitchforks.social" 
+              target="_blank" 
+              rel="noreferrer"
+              className="text-primary hover:text-primary/80 hover:underline transition-colors"
+              data-testid="link-app"
+            >
+              App
+            </a>
+          </div>
+          
+          {account && (
+              <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-400 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  onClick={disconnect}
+                  title="Disconnect Wallet"
+                  data-testid="button-disconnect"
+              >
+                  <LogOut className="w-5 h-5" />
+              </Button>
+          )}
+          <Button 
             variant={account ? "outline" : "default"}
             className={`font-space tracking-wide ${account ? "border-primary/50 text-primary hover:bg-primary/10" : "bg-primary text-background hover:bg-primary/90"}`}
             onClick={() => account ? null : connect()}
             disabled={isConnecting}
-            >
+            data-testid="button-connect-wallet"
+          >
             <Wallet className="w-4 h-4 mr-2" />
             {isConnecting ? "Connecting..." : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Connect Wallet"}
-            </Button>
+          </Button>
         </div>
       </header>
 
