@@ -78,30 +78,31 @@ export default function Bridge() {
   }, [account, provider, chainId, isWrongNetwork, pforkAddress, ferryAddress]);
 
   // Tracker Logic: Listen for Destination Events
-  // Note: In a real production app, we would use a WebSocket provider or indexer for the destination chain.
-  // Since we only have standard RPCs, we can poll for events on the destination chain.
   useEffect(() => {
     if (trackerState !== "bridged" && trackerState !== "relaying") return;
 
     const pollDestination = async () => {
       try {
-        // Create a provider for the destination chain (read-only)
         const destProvider = new ethers.JsonRpcProvider(NETWORKS[destNetwork].rpc);
         const destFerryAddress = CONTRACTS[destNetwork].FERRY;
         const destFerry = new ethers.Contract(destFerryAddress, [
           "event BridgeInFulfilled(address indexed to, uint256 amount, bytes32 indexed messageId)"
         ], destProvider);
 
-        console.log(`Listening for BridgeIn on ${destNetwork}...`);
-
-        // In a real app, we would filter by our specific messageId.
-        // For this demo, we'll just listen for ANY event to 'to' address (our account)
-        const filter = destFerry.filters.BridgeInFulfilled(account);
+        const currentBlock = await destProvider.getBlockNumber();
+        const fromBlock = Math.max(0, currentBlock - 1000);
         
-        const logs = await destFerry.queryFilter(filter, -100); // Check last 100 blocks
+        const logs = await destFerry.queryFilter("BridgeInFulfilled", fromBlock, currentBlock);
         
-        if (logs.length > 0) {
-          const lastLog = logs[logs.length - 1];
+        const myLogs = logs.filter((log) => {
+          if ("args" in log && log.args) {
+            return log.args[0].toLowerCase() === account?.toLowerCase();
+          }
+          return false;
+        });
+        
+        if (myLogs.length > 0) {
+          const lastLog = myLogs[myLogs.length - 1];
           console.log("Bridge In Detected!", lastLog.transactionHash);
           setDestinationTxHash(lastLog.transactionHash);
           setTrackerState("complete");
@@ -111,7 +112,8 @@ export default function Bridge() {
       }
     };
 
-    const interval = setInterval(pollDestination, 5000);
+    const interval = setInterval(pollDestination, 10000);
+    pollDestination();
     return () => clearInterval(interval);
   }, [trackerState, destNetwork, account]);
 
