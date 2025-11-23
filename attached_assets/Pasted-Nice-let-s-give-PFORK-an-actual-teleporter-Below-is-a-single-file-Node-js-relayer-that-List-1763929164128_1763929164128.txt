@@ -1,0 +1,250 @@
+Nice, let’s give PFORK an actual teleporter. 🛶⚡
+
+Below is a single-file Node.js relayer that:
+
+Listens for BridgeOutRequested on Ethereum → pays out on Neo X
+
+Listens for BridgeOutRequested on Neo X → pays out on Ethereum
+
+Computes a messageId so each bridge-in is processed once
+
+You can drop this into relayer.js.
+
+1. Install deps
+npm init -y
+npm install ethers dotenv
+
+
+Create a .env:
+
+RELAYER_PRIVATE_KEY=YOUR_PRIVATE_KEY_HERE
+
+ETH_RPC_URL=https://your-eth-rpc
+NEOX_RPC_URL=https://your-neox-rpc
+
+ETH_FERRY_ADDRESS=0xYourEthFerryAddress
+NEOX_FERRY_ADDRESS=0xYourNeoxFerryAddress
+
+
+Use a dedicated hot wallet with limited funds, not your main key.
+
+2. relayer.js
+require("dotenv").config();
+const { ethers } = require("ethers");
+
+// -----------------------------
+// Config
+// -----------------------------
+const {
+  RELAYER_PRIVATE_KEY,
+  ETH_RPC_URL,
+  NEOX_RPC_URL,
+  ETH_FERRY_ADDRESS,
+  NEOX_FERRY_ADDRESS,
+} = process.env;
+
+// Adjust to real chain IDs
+const CHAIN_ID_ETH = 1;        // mainnet; use 11155111 for sepolia, etc.
+const CHAIN_ID_NEOX = 12227332; // placeholder; replace with actual Neo X chainId
+
+if (
+  !RELAYER_PRIVATE_KEY ||
+  !ETH_RPC_URL ||
+  !NEOX_RPC_URL ||
+  !ETH_FERRY_ADDRESS ||
+  !NEOX_FERRY_ADDRESS
+) {
+  console.error("✖ Missing env vars. Check .env");
+  process.exit(1);
+}
+
+// -----------------------------
+// Minimal ABI: events + fulfillBridgeIn
+// -----------------------------
+const ferryAbi = [
+  // event BridgeOutRequested(address indexed from, address indexed toOnOtherChain, uint256 amountIn, uint256 amountOut, uint256 feePaid, uint256 nonce);
+  "event BridgeOutRequested(address indexed from, address indexed toOnOtherChain, uint256 amountIn, uint256 amountOut, uint256 feePaid, uint256 nonce)",
+
+  // event BridgeInFulfilled(address indexed to, uint256 amount, bytes32 indexed messageId);
+  "event BridgeInFulfilled(address indexed to, uint256 amount, bytes32 indexed messageId)",
+
+  // function fulfillBridgeIn(address to, uint256 amount, bytes32 messageId) external
+  "function fulfillBridgeIn(address to, uint256 amount, bytes32 messageId) external",
+];
+
+// -----------------------------
+// Providers & wallets
+// -----------------------------
+const ethProvider = new ethers.JsonRpcProvider(ETH_RPC_URL);
+const neoxProvider = new ethers.JsonRpcProvider(NEOX_RPC_URL);
+
+const relayerWalletEth = new ethers.Wallet(RELAYER_PRIVATE_KEY, ethProvider);
+const relayerWalletNeox = new ethers.Wallet(RELAYER_PRIVATE_KEY, neoxProvider);
+
+const ethFerry = new ethers.Contract(ETH_FERRY_ADDRESS, ferryAbi, relayerWalletEth);
+const neoxFerry = new ethers.Contract(NEOX_FERRY_ADDRESS, ferryAbi, relayerWalletNeox);
+
+// -----------------------------
+// Helper: messageId
+// -----------------------------
+function computeMessageId({
+  srcChainId,
+  dstChainId,
+  srcFerry,
+  nonce,
+  from,
+  toOnOtherChain,
+  amountOut,
+}) {
+  return ethers.keccak256(
+    ethers.solidityPacked(
+      ["uint16", "uint16", "address", "uint256", "address", "address", "uint256"],
+      [srcChainId, dstChainId, srcFerry, nonce, from, toOnOtherChain, amountOut]
+    )
+  );
+}
+
+// -----------------------------
+// Relay logic
+// -----------------------------
+async function handleEthBridgeOut(
+  from,
+  toOnOtherChain,
+  amountIn,
+  amountOut,
+  feePaid,
+  nonce,
+  event
+) {
+  try {
+    console.log("\n🌉 ETH → NeoX bridgeOut detected");
+    console.log(" from:", from);
+    console.log(" toOnOtherChain (NeoX):", toOnOtherChain);
+    console.log(" amountIn:", amountIn.toString());
+    console.log(" amountOut:", amountOut.toString());
+    console.log(" feePaid:", feePaid.toString());
+    console.log(" nonce:", nonce.toString());
+    console.log(" txHash:", event.log.transactionHash);
+
+    const messageId = computeMessageId({
+      srcChainId: CHAIN_ID_ETH,
+      dstChainId: CHAIN_ID_NEOX,
+      srcFerry: ETH_FERRY_ADDRESS,
+      nonce,
+      from,
+      toOnOtherChain,
+      amountOut,
+    });
+
+    console.log(" messageId:", messageId);
+
+    // Call fulfillBridgeIn on Neo X
+    const tx = await neoxFerry.fulfillBridgeIn(toOnOtherChain, amountOut, messageId);
+    console.log("  ↳ Sending fulfillBridgeIn on NeoX:", tx.hash);
+    const receipt = await tx.wait();
+    console.log("  ✓ NeoX fulfillBridgeIn confirmed in block", receipt.blockNumber);
+  } catch (err) {
+    console.error("✖ Error handling ETH → NeoX bridgeOut:", err);
+  }
+}
+
+async function handleNeoxBridgeOut(
+  from,
+  toOnOtherChain,
+  amountIn,
+  amountOut,
+  feePaid,
+  nonce,
+  event
+) {
+  try {
+    console.log("\n🌉 NeoX → ETH bridgeOut detected");
+    console.log(" from:", from);
+    console.log(" toOnOtherChain (ETH):", toOnOtherChain);
+    console.log(" amountIn:", amountIn.toString());
+    console.log(" amountOut:", amountOut.toString());
+    console.log(" feePaid:", feePaid.toString());
+    console.log(" nonce:", nonce.toString());
+    console.log(" txHash:", event.log.transactionHash);
+
+    const messageId = computeMessageId({
+      srcChainId: CHAIN_ID_NEOX,
+      dstChainId: CHAIN_ID_ETH,
+      srcFerry: NEOX_FERRY_ADDRESS,
+      nonce,
+      from,
+      toOnOtherChain,
+      amountOut,
+    });
+
+    console.log(" messageId:", messageId);
+
+    // Call fulfillBridgeIn on Ethereum
+    const tx = await ethFerry.fulfillBridgeIn(toOnOtherChain, amountOut, messageId);
+    console.log("  ↳ Sending fulfillBridgeIn on ETH:", tx.hash);
+    const receipt = await tx.wait();
+    console.log("  ✓ ETH fulfillBridgeIn confirmed in block", receipt.blockNumber);
+  } catch (err) {
+    console.error("✖ Error handling NeoX → ETH bridgeOut:", err);
+  }
+}
+
+// -----------------------------
+// Main listener setup
+// -----------------------------
+async function main() {
+  console.log("🚀 PFORK Ferry Relayer starting up...");
+
+  const ethChainId = (await ethProvider.getNetwork()).chainId;
+  const neoxChainId = (await neoxProvider.getNetwork()).chainId;
+  console.log(" ETH chainId:", ethChainId.toString());
+  console.log(" NeoX chainId:", neoxChainId.toString());
+
+  console.log(" ETH ferry:", ETH_FERRY_ADDRESS);
+  console.log(" NeoX ferry:", NEOX_FERRY_ADDRESS);
+  console.log(" Relayer (ETH):", await relayerWalletEth.getAddress());
+  console.log(" Relayer (NeoX):", await relayerWalletNeox.getAddress());
+
+  // Watch BridgeOutRequested on Ethereum
+  ethFerry.on(
+    "BridgeOutRequested",
+    (from, toOnOtherChain, amountIn, amountOut, feePaid, nonce, event) => {
+      handleEthBridgeOut(from, toOnOtherChain, amountIn, amountOut, feePaid, nonce, event);
+    }
+  );
+
+  // Watch BridgeOutRequested on NeoX
+  neoxFerry.on(
+    "BridgeOutRequested",
+    (from, toOnOtherChain, amountIn, amountOut, feePaid, nonce, event) => {
+      handleNeoxBridgeOut(from, toOnOtherChain, amountIn, amountOut, feePaid, nonce, event);
+    }
+  );
+
+  console.log("👂 Listening for BridgeOutRequested events on both chains...");
+}
+
+main().catch((err) => {
+  console.error("Fatal error in relayer:", err);
+  process.exit(1);
+});
+
+3. Run it
+node relayer.js
+
+
+If everything’s wired:
+
+Fund both ferry contracts with PFORK
+
+Set the relayer address on both with setRelayer(relayerAddress, true)
+
+Call bridgeOut from a test wallet on one side
+
+You should see logs like:
+
+🌉 ETH → NeoX bridgeOut detected
+
+↳ Sending fulfillBridgeIn on NeoX: 0x...
+
+✓ NeoX fulfillBridgeIn confirmed...
