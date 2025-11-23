@@ -1,16 +1,58 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowRight, Anchor } from "lucide-react";
+import { ArrowRight, Anchor, Volume2, VolumeX } from "lucide-react";
 // @ts-ignore
 import ferryVideo from "@assets/generated_videos/mystical_ferryman_rowing_ninjas_across_a_moonlit_river.mp4";
+// @ts-ignore
+import backgroundMusic from "@assets/Escape Moonlight  (2)_1763939442443.mp3";
 
 export default function Landing() {
   const [, setLocation] = useLocation();
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const toggleMute = () => {
+    if (audioRef.current) {
+      audioRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
+  useEffect(() => {
+    // Auto-play audio on mount
+    if (audioRef.current) {
+      audioRef.current.play().catch((error) => {
+        console.log("Audio autoplay prevented:", error);
+      });
+    }
+  }, []);
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black text-white">
+      {/* Background Audio */}
+      <audio ref={audioRef} loop>
+        <source src={backgroundMusic} type="audio/mpeg" />
+      </audio>
+
+      {/* Audio Control Toggle */}
+      <motion.button
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1, duration: 0.5 }}
+        onClick={toggleMute}
+        className="fixed top-6 right-6 z-30 p-3 rounded-full bg-black/30 backdrop-blur-md border border-white/10 hover:bg-black/50 hover:border-primary/50 transition-all group"
+        title={isMuted ? "Unmute Music" : "Mute Music"}
+        data-testid="button-audio-toggle"
+      >
+        {isMuted ? (
+          <VolumeX className="w-5 h-5 text-gray-400 group-hover:text-primary transition-colors" />
+        ) : (
+          <Volume2 className="w-5 h-5 text-primary group-hover:text-primary/80 transition-colors" />
+        )}
+      </motion.button>
+
       {/* Video Background */}
       <div className="absolute inset-0 z-0">
         <div className="absolute inset-0 bg-black/40 z-10" /> {/* Overlay for readability */}
