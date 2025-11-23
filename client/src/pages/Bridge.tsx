@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves, ExternalLink, CheckCircle2, Loader2, LogOut } from "lucide-react";
+import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves, ExternalLink, CheckCircle2, Loader2, LogOut, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +13,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useWeb3, NetworkType } from "@/hooks/useWeb3";
 import { NETWORKS, CONTRACTS, ERC20_ABI, FERRY_ABI } from "@/lib/contracts";
 import { ethers } from "ethers";
+import { 
+  computeMessageId, 
+  saveBridge, 
+  getPendingBridges, 
+  markBridgeAsClaimed,
+  type PendingBridge 
+} from "@/lib/bridgeStorage";
 
 export default function Bridge() {
   const { toast } = useToast();
@@ -27,10 +34,9 @@ export default function Bridge() {
   const [balance, setBalance] = useState<string>("0.0");
   const [allowance, setAllowance] = useState<string>("0.0");
   const [nativeFee, setNativeFee] = useState<string>("0");
-  
-  // Live Tracking State
-  const [trackerState, setTrackerState] = useState<"idle" | "processing" | "bridged" | "relaying" | "complete">("idle");
-  const [destinationTxHash, setDestinationTxHash] = useState("");
+  const [pendingBridges, setPendingBridges] = useState<PendingBridge[]>([]);
+  const [isClaiming, setIsClaiming] = useState<string | null>(null);
+  const [claimDestNetwork, setClaimDestNetwork] = useState<NetworkType | null>(null);
 
   // Determine current network context based on direction
   const sourceNetwork: NetworkType = direction === "eth-neox" ? "ETH" : "NEOX";
@@ -77,45 +83,53 @@ export default function Bridge() {
     return () => clearInterval(interval);
   }, [account, provider, chainId, isWrongNetwork, pforkAddress, ferryAddress]);
 
-  // Tracker Logic: Listen for Destination Events
+  // Load pending bridges on mount and when account changes
   useEffect(() => {
-    if (trackerState !== "bridged" && trackerState !== "relaying") return;
+    if (!account) {
+      setPendingBridges([]);
+      return;
+    }
+    
+    const bridges = getPendingBridges().filter(
+      (b) => b.from.toLowerCase() === account.toLowerCase()
+    );
+    setPendingBridges(bridges);
+  }, [account]);
 
-    const pollDestination = async () => {
-      try {
-        const destProvider = new ethers.JsonRpcProvider(NETWORKS[destNetwork].rpc);
-        const destFerryAddress = CONTRACTS[destNetwork].FERRY;
-        const destFerry = new ethers.Contract(destFerryAddress, [
-          "event BridgeInFulfilled(address indexed to, uint256 amount, bytes32 indexed messageId)"
-        ], destProvider);
+  // Status check: Periodically check if pending bridges have been claimed
+  useEffect(() => {
+    if (pendingBridges.length === 0) return;
 
-        const currentBlock = await destProvider.getBlockNumber();
-        const fromBlock = Math.max(0, currentBlock - 1000);
-        
-        const logs = await destFerry.queryFilter("BridgeInFulfilled", fromBlock, currentBlock);
-        
-        const myLogs = logs.filter((log) => {
-          if ("args" in log && log.args) {
-            return log.args[0].toLowerCase() === account?.toLowerCase();
+    const checkStatus = async () => {
+      for (const bridge of pendingBridges) {
+        try {
+          const destProvider = new ethers.JsonRpcProvider(NETWORKS[bridge.destChain].rpc);
+          const destFerry = new ethers.Contract(
+            CONTRACTS[bridge.destChain].FERRY,
+            FERRY_ABI,
+            destProvider
+          );
+
+          const isProcessed = await destFerry.processedMessages(bridge.messageId);
+          
+          if (isProcessed && bridge.status === "pending") {
+            markBridgeAsClaimed(bridge.messageId, "auto-detected");
+            // Refresh pending bridges list
+            const updatedBridges = getPendingBridges().filter(
+              (b) => b.from.toLowerCase() === account?.toLowerCase()
+            );
+            setPendingBridges(updatedBridges);
           }
-          return false;
-        });
-        
-        if (myLogs.length > 0) {
-          const lastLog = myLogs[myLogs.length - 1];
-          console.log("Bridge In Detected!", lastLog.transactionHash);
-          setDestinationTxHash(lastLog.transactionHash);
-          setTrackerState("complete");
+        } catch (error) {
+          console.error("Error checking bridge status:", error);
         }
-      } catch (error) {
-        console.error("Error polling destination:", error);
       }
     };
 
-    const interval = setInterval(pollDestination, 10000);
-    pollDestination();
+    checkStatus();
+    const interval = setInterval(checkStatus, 15000); // Check every 15s
     return () => clearInterval(interval);
-  }, [trackerState, destNetwork, account]);
+  }, [pendingBridges, account]);
 
 
   const handleApprove = async () => {
@@ -160,14 +174,13 @@ export default function Bridge() {
       return;
     }
 
-    if (!signer) {
+    if (!signer || !account) {
       connect();
       return;
     }
 
     try {
       setIsBridging(true);
-      setTrackerState("processing");
       
       const ferryContract = new ethers.Contract(ferryAddress, FERRY_ABI, signer);
       const amountWei = ethers.parseUnits(amount, 18);
@@ -180,10 +193,60 @@ export default function Bridge() {
       console.log("Bridge tx submitted:", tx.hash);
       setTxHash(tx.hash);
       
-      await tx.wait();
+      // Wait for receipt
+      const receipt = await tx.wait();
       
-      setTrackerState("bridged"); // Source tx confirmed
-      setShowSuccess(true); // Show modal
+      // Parse BridgeOutRequested event
+      const event = receipt.logs
+        .map((log: any) => {
+          try {
+            return ferryContract.interface.parseLog(log);
+          } catch {
+            return null;
+          }
+        })
+        .find((parsed: any) => parsed?.name === "BridgeOutRequested");
+
+      if (event) {
+        const { from, toOnOtherChain, amountOut, nonce } = event.args;
+        
+        // Compute messageId
+        const srcChainId = NETWORKS[sourceNetwork].chainId;
+        const dstChainId = NETWORKS[destNetwork].chainId;
+        const messageId = computeMessageId(
+          srcChainId,
+          dstChainId,
+          ferryAddress,
+          nonce.toString(),
+          from,
+          toOnOtherChain,
+          amountOut.toString()
+        );
+
+        // Save to localStorage
+        const bridge: PendingBridge = {
+          messageId,
+          from,
+          toOnOtherChain,
+          amountOut: amountOut.toString(),
+          sourceChain: sourceNetwork,
+          destChain: destNetwork,
+          sourceTxHash: tx.hash,
+          nonce: nonce.toString(),
+          timestamp: Date.now(),
+          status: "pending",
+        };
+        
+        saveBridge(bridge);
+        
+        // Refresh pending bridges list
+        const updatedBridges = getPendingBridges().filter(
+          (b) => b.from.toLowerCase() === account.toLowerCase()
+        );
+        setPendingBridges(updatedBridges);
+      }
+      
+      setShowSuccess(true);
       setAmount("");
       
       // Refresh balance
@@ -191,14 +254,8 @@ export default function Bridge() {
       const bal = await tokenContract.balanceOf(account);
       setBalance(ethers.formatUnits(bal, 18));
 
-      // Simulate "Relaying" state after a few seconds if real event doesn't fire immediately
-      setTimeout(() => {
-          if (trackerState === "bridged") setTrackerState("relaying");
-      }, 5000);
-
     } catch (error: any) {
       console.error("Bridge error:", error);
-      setTrackerState("idle");
       toast({
         title: "Bridge Failed",
         description: error.message || "Transaction rejected.",
@@ -209,24 +266,75 @@ export default function Bridge() {
     }
   };
 
+  const handleClaim = async (bridge: PendingBridge) => {
+    if (!signer || !account) {
+      connect();
+      return;
+    }
+
+    const correctChainId = NETWORKS[bridge.destChain].chainId;
+    
+    // Check if on correct destination network
+    if (chainId !== correctChainId) {
+      setClaimDestNetwork(bridge.destChain);
+      switchNetwork(bridge.destChain);
+      return;
+    }
+
+    try {
+      setIsClaiming(bridge.messageId);
+      
+      const destFerryAddress = CONTRACTS[bridge.destChain].FERRY;
+      const destFerryContract = new ethers.Contract(destFerryAddress, FERRY_ABI, signer);
+      
+      // Get nativeFeeWei from destination ferry
+      const destNativeFee = await destFerryContract.nativeFeeWei();
+      
+      // Call fulfillBridgeIn
+      const tx = await destFerryContract.fulfillBridgeIn(
+        bridge.toOnOtherChain,
+        bridge.amountOut,
+        bridge.messageId,
+        { value: destNativeFee }
+      );
+      
+      console.log("Claim tx submitted:", tx.hash);
+      
+      // Wait for receipt
+      await tx.wait();
+      
+      // Update bridge status
+      markBridgeAsClaimed(bridge.messageId, tx.hash);
+      
+      // Refresh pending bridges list
+      const updatedBridges = getPendingBridges().filter(
+        (b) => b.from.toLowerCase() === account.toLowerCase()
+      );
+      setPendingBridges(updatedBridges);
+      
+      toast({
+        title: "Claim Successful!",
+        description: `${ethers.formatUnits(bridge.amountOut, 18)} PFORK claimed on ${NETWORKS[bridge.destChain].name}`,
+      });
+      
+    } catch (error: any) {
+      console.error("Claim error:", error);
+      toast({
+        title: "Claim Failed",
+        description: error.message || "Transaction rejected.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClaiming(null);
+      setClaimDestNetwork(null);
+    }
+  };
+
   const toggleDirection = () => {
     setDirection(prev => prev === "eth-neox" ? "neox-eth" : "eth-neox");
   };
 
   const needsApproval = parseFloat(allowance) < (parseFloat(amount) || 0);
-
-  // Render Tracker Step
-  const Step = ({ status, label, stepNum }: { status: "pending" | "active" | "complete", label: string, stepNum: number }) => (
-    <div className={`flex flex-col items-center gap-2 ${status === "pending" ? "opacity-50" : "opacity-100"}`}>
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 
-        ${status === "complete" ? "bg-primary border-primary text-background" : 
-          status === "active" ? "bg-primary/20 border-primary text-primary animate-pulse" : 
-          "bg-transparent border-gray-600 text-gray-600"}`}>
-        {status === "complete" ? <CheckCircle2 className="w-5 h-5" /> : status === "active" ? <Loader2 className="w-4 h-4 animate-spin" /> : stepNum}
-      </div>
-      <span className="text-[10px] font-mono uppercase tracking-wider">{label}</span>
-    </div>
-  );
 
   return (
     <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col">
@@ -289,44 +397,6 @@ export default function Bridge() {
                 {isWrongNetwork ? "Wrong Network" : "System Online"}
               </div>
             </div>
-
-            {/* Live Tracker (Visible when active) */}
-            <AnimatePresence>
-                {trackerState !== "idle" && (
-                    <motion.div 
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="mb-8 bg-black/20 rounded-lg p-4 border border-white/5"
-                    >
-                        <div className="flex justify-between items-center px-4">
-                            <Step 
-                                stepNum={1} 
-                                label="Bridge Out" 
-                                status={trackerState === "processing" ? "active" : "complete"} 
-                            />
-                            <div className={`flex-1 h-[1px] mx-2 ${trackerState === "processing" ? "bg-gray-700" : "bg-primary"}`} />
-                            <Step 
-                                stepNum={2} 
-                                label="Relayer" 
-                                status={trackerState === "processing" ? "pending" : trackerState === "bridged" || trackerState === "relaying" ? "active" : "complete"} 
-                            />
-                             <div className={`flex-1 h-[1px] mx-2 ${trackerState === "complete" ? "bg-primary" : "bg-gray-700"}`} />
-                            <Step 
-                                stepNum={3} 
-                                label="Bridge In" 
-                                status={trackerState === "complete" ? "complete" : "pending"} 
-                            />
-                        </div>
-                        <div className="text-center mt-4 text-[10px] text-gray-400 font-mono">
-                            {trackerState === "processing" && "Signing transaction on Source Chain..."}
-                            {(trackerState === "bridged" || trackerState === "relaying") && "Waiting for Relayer to pickup (requires external node)..."}
-                            {trackerState === "complete" && "Bridge Complete! Tokens arrived."}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
 
             {/* Route Selector */}
             <div className="relative flex flex-col gap-4 mb-8">
@@ -480,61 +550,134 @@ export default function Bridge() {
             </a>
           </div>
         </motion.div>
+
+        {/* Pending Bridges Section */}
+        {account && pendingBridges.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="w-full max-w-lg mt-8"
+          >
+            <div className="glass-panel rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
+              <div className="flex items-center gap-3 mb-6">
+                <Clock className="w-5 h-5 text-primary" />
+                <h3 className="text-lg font-cinzel text-gray-300">Pending Claims</h3>
+                <span className="ml-auto text-xs font-space text-gray-500 bg-primary/10 px-2 py-1 rounded">
+                  {pendingBridges.length}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {pendingBridges.map((bridge) => {
+                  const isClaimingThis = isClaiming === bridge.messageId;
+                  const needsNetworkSwitch = claimDestNetwork === bridge.destChain && chainId !== NETWORKS[bridge.destChain].chainId;
+                  
+                  return (
+                    <div 
+                      key={bridge.messageId}
+                      className="bg-black/20 rounded-lg p-4 border border-white/5 hover:border-primary/20 transition-all"
+                      data-testid={`pending-bridge-${bridge.messageId}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-bold text-white font-space">
+                            {ethers.formatUnits(bridge.amountOut, 18)} PFORK
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold ${bridge.sourceChain === "ETH" ? "bg-blue-600" : "bg-green-600"}`}>
+                            {bridge.sourceChain === "ETH" ? "E" : "N"}
+                          </div>
+                          <ArrowRightLeft className="w-3 h-3" />
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold ${bridge.destChain === "ETH" ? "bg-blue-600" : "bg-green-600"}`}>
+                            {bridge.destChain === "ETH" ? "E" : "N"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] text-gray-500 mb-3">
+                        <span className="font-mono">
+                          {new Date(bridge.timestamp).toLocaleString()}
+                        </span>
+                        <a
+                          href={`${NETWORKS[bridge.sourceChain].explorer}/tx/${bridge.sourceTxHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline flex items-center gap-1"
+                        >
+                          Tx <ExternalLink className="w-2 h-2" />
+                        </a>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        className="w-full bg-primary text-background font-bold font-space hover:bg-primary/90"
+                        onClick={() => handleClaim(bridge)}
+                        disabled={isClaimingThis}
+                        data-testid={`button-claim-${bridge.messageId}`}
+                      >
+                        {isClaimingThis ? (
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Claiming...
+                          </div>
+                        ) : needsNetworkSwitch ? (
+                          `Switch to ${NETWORKS[bridge.destChain].name}`
+                        ) : (
+                          `Claim on ${NETWORKS[bridge.destChain].name}`
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
       </main>
 
       {/* Success Dialog */}
       <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
         <DialogContent className="glass-panel border-primary/20 text-white sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-center font-cinzel text-2xl text-primary">Passage Booked!</DialogTitle>
+            <DialogTitle className="text-center font-cinzel text-2xl text-primary">Bridge Initiated!</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center py-6 space-y-4">
             <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mb-4">
-              <Ship className="w-10 h-10 text-primary animate-pulse" />
+              <CheckCircle2 className="w-10 h-10 text-primary" />
             </div>
             <p className="text-center text-gray-300 font-space">
-              Your <span className="text-white font-bold">{amount} PFORK</span> have boarded the ferry.
+              Your tokens have been locked on <span className="text-white font-bold">{NETWORKS[sourceNetwork].name}</span>.
             </p>
             <div className="w-full bg-black/30 p-4 rounded-lg mt-4">
               <div className="flex justify-between text-xs text-gray-500 mb-2 font-mono">
-                <span>Status</span>
-                <span className="text-green-400">Waiting for Relayer...</span>
-              </div>
-              <div className="flex justify-between text-xs text-gray-500 font-mono mb-2">
                 <span>Bridge Out Tx</span>
                 <a 
                   href={`${NETWORKS[sourceNetwork].explorer}/tx/${txHash}`} 
                   target="_blank"
                   rel="noreferrer"
                   className="truncate w-32 text-right text-primary hover:underline flex items-center gap-1 ml-auto"
+                  data-testid="link-bridge-tx"
                 >
                   {txHash.slice(0, 6)}...{txHash.slice(-4)}
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
-               {destinationTxHash && (
-                   <div className="flex justify-between text-xs text-gray-500 font-mono">
-                    <span>Bridge In Tx</span>
-                    <a 
-                    href={`${NETWORKS[destNetwork].explorer}/tx/${destinationTxHash}`} 
-                    target="_blank"
-                    rel="noreferrer"
-                    className="truncate w-32 text-right text-green-400 hover:underline flex items-center gap-1 ml-auto"
-                    >
-                    {destinationTxHash.slice(0, 6)}...{destinationTxHash.slice(-4)}
-                    <ExternalLink className="w-3 h-3" />
-                    </a>
-                </div>
-               )}
+              <div className="flex justify-between text-xs text-gray-500 font-mono">
+                <span>Next Step</span>
+                <span className="text-green-400">Claim on {NETWORKS[destNetwork].name}</span>
+              </div>
             </div>
-            <div className="text-xs text-gray-500 text-center mt-2">
-                Please keep this window open to track progress, or check your wallet on the destination chain.
+            <div className="text-xs text-gray-500 text-center mt-2 px-4">
+              Your bridge request has been saved. Scroll down to the "Pending Claims" section to claim your tokens on {NETWORKS[destNetwork].name}.
             </div>
             <Button 
-              className="w-full mt-6 bg-white/10 hover:bg-white/20 text-white font-space"
+              className="w-full mt-6 bg-primary hover:bg-primary/90 text-background font-space font-bold"
               onClick={() => setShowSuccess(false)}
+              data-testid="button-close-success"
             >
-              Keep Tracking
+              Continue
             </Button>
           </div>
         </DialogContent>

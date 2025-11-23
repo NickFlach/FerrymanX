@@ -30,9 +30,12 @@ export const CONTRACTS = {
 
 export const FERRY_ABI = [
   "function bridgeOut(uint256 amount, address toOnOther) payable",
+  "function fulfillBridgeIn(address to, uint256 amount, bytes32 messageId) payable",
   "function nativeFeeWei() view returns (uint256)",
   "function feeBps() view returns (uint16)",
+  "function processedMessages(bytes32) view returns (bool)",
   "event BridgeOutRequested(address indexed from, address indexed toOnOtherChain, uint256 amountIn, uint256 amountOut, uint256 pforkFeePaid, uint256 nonce)",
+  "event BridgeInFulfilled(address indexed to, uint256 amount, bytes32 indexed messageId)",
 ];
 
 export const ERC20_ABI = [

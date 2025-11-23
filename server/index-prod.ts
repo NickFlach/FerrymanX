@@ -5,7 +5,6 @@ import path from "node:path";
 import express, { type Express, type Request } from "express";
 
 import runApp from "./app";
-import { startRelayer } from "./relayer";
 
 export async function serveStatic(app: Express, server: Server) {
   const distPath = path.resolve(import.meta.dirname, "public");
@@ -26,6 +25,4 @@ export async function serveStatic(app: Express, server: Server) {
 
 (async () => {
   await runApp(serveStatic);
-  // Start relayer as background service
-  await startRelayer();
 })();
