@@ -1,0 +1,73 @@
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
+import { motion } from "framer-motion";
+import { ArrowRight, Anchor } from "lucide-react";
+// @ts-ignore
+import ferryVideo from "@assets/generated_videos/mystical_ferryman_rowing_ninjas_across_a_moonlit_river.mp4";
+
+export default function Landing() {
+  const [, setLocation] = useLocation();
+  const [videoLoaded, setVideoLoaded] = useState(false);
+
+  return (
+    <div className="relative w-full h-screen overflow-hidden bg-black text-white">
+      {/* Video Background */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 bg-black/40 z-10" /> {/* Overlay for readability */}
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent z-10" />
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="w-full h-full object-cover opacity-80"
+          onLoadedData={() => setVideoLoaded(true)}
+        >
+          <source src={ferryVideo} type="video/mp4" />
+        </video>
+      </div>
+
+      {/* Content */}
+      <div className="relative z-20 h-full flex flex-col items-center justify-center text-center px-4">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, delay: 0.5 }}
+          className="space-y-6"
+        >
+          <h1 className="text-6xl md:text-8xl font-cinzel font-bold tracking-wider text-glow text-white drop-shadow-lg">
+            FERRYMAN<span className="text-primary">X</span>
+          </h1>
+          
+          <p className="text-xl md:text-2xl font-space text-gray-200 max-w-2xl mx-auto font-light tracking-wide">
+            The bridge between worlds. <br/>
+            <span className="text-primary/80">Ethereum</span> ⇋ <span className="text-green-400">Neo X</span>
+          </p>
+
+          <motion.button
+            whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(6, 182, 212, 0.5)" }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setLocation("/bridge")}
+            className="mt-12 group relative inline-flex items-center gap-3 px-8 py-4 bg-primary/10 backdrop-blur-md border border-primary/50 hover:bg-primary/20 text-primary hover:text-white rounded-none transition-all duration-300 uppercase font-cinzel font-bold tracking-widest"
+          >
+            <span>Enter the Ferry</span>
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            
+            {/* Border Glow Effect */}
+            <div className="absolute inset-0 rounded-none border border-primary/0 group-hover:border-primary/50 transition-colors duration-500" />
+          </motion.button>
+        </motion.div>
+
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 2, duration: 1 }}
+          className="absolute bottom-10 text-gray-500 text-sm font-space uppercase tracking-widest flex items-center gap-2"
+        >
+          <Anchor className="w-4 h-4" />
+          Safe Passage Guaranteed
+        </motion.div>
+      </div>
+    </div>
+  );
+}
