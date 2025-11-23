@@ -26,6 +26,7 @@ export default function Bridge() {
   const [txHash, setTxHash] = useState("");
   const [balance, setBalance] = useState<string>("0.0");
   const [allowance, setAllowance] = useState<string>("0.0");
+  const [nativeFee, setNativeFee] = useState<string>("0");
   
   // Live Tracking State
   const [trackerState, setTrackerState] = useState<"idle" | "processing" | "bridged" | "relaying" | "complete">("idle");
@@ -41,25 +42,31 @@ export default function Bridge() {
   const pforkAddress = CONTRACTS[sourceNetwork].PFORK;
   const ferryAddress = CONTRACTS[sourceNetwork].FERRY;
 
-  // Fetch balance and allowance
+  // Fetch balance, allowance, and native fee
   useEffect(() => {
     const fetchdata = async () => {
       if (!account || !provider || isWrongNetwork) {
         setBalance("0.0");
         setAllowance("0.0");
+        setNativeFee("0");
         return;
       }
 
       try {
         const tokenContract = new ethers.Contract(pforkAddress, ERC20_ABI, provider);
+        const ferryContract = new ethers.Contract(ferryAddress, FERRY_ABI, provider);
         
         // Fetch balance
         const bal = await tokenContract.balanceOf(account);
-        setBalance(ethers.formatUnits(bal, 18)); // Assuming 18 decimals
+        setBalance(ethers.formatUnits(bal, 18));
 
         // Fetch allowance
         const allow = await tokenContract.allowance(account, ferryAddress);
         setAllowance(ethers.formatUnits(allow, 18));
+
+        // Fetch native fee
+        const fee = await ferryContract.nativeFeeWei();
+        setNativeFee(fee.toString());
       } catch (error) {
         console.error("Error fetching data:", error);
       }
@@ -163,8 +170,10 @@ export default function Bridge() {
       const ferryContract = new ethers.Contract(ferryAddress, FERRY_ABI, signer);
       const amountWei = ethers.parseUnits(amount, 18);
 
-      // Call bridgeOut(amount, toOnOtherChain)
-      const tx = await ferryContract.bridgeOut(amountWei, account);
+      // Call bridgeOut(amount, toOnOtherChain) with native fee
+      const tx = await ferryContract.bridgeOut(amountWei, account, {
+        value: nativeFee
+      });
       
       console.log("Bridge tx submitted:", tx.hash);
       setTxHash(tx.hash);
@@ -445,7 +454,7 @@ export default function Bridge() {
 
             {/* Fee Info */}
             <div className="mt-6 flex justify-between items-center text-xs text-gray-500 font-mono">
-              <span>Relayer Fee: Free (Testnet)</span>
+              <span>Native Fee: {ethers.formatEther(nativeFee || "0")} {NETWORKS[sourceNetwork].currency}</span>
               <span>Est. Time: ~2 mins</span>
             </div>
 
