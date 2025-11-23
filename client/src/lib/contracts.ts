@@ -4,7 +4,7 @@ export const NETWORKS = {
   ETH: {
     chainId: 1,
     name: "Ethereum",
-    rpc: "https://eth.llamarpc.com", // Public RPC
+    rpc: "https://eth.llamarpc.com",
     explorer: "https://etherscan.io",
     currency: "ETH",
   },
@@ -20,17 +20,19 @@ export const NETWORKS = {
 export const CONTRACTS = {
   ETH: {
     PFORK: "0x536d98Ad83F7d0230B9384e606208802ECD728FE",
-    FERRY: "0x6E43963D748861203Df20e5Ff2AC6aeB807855a7",
+    FERRY: "0xDE7cF1Dd14b613db5A4727A59ad1Cc1ba6f47a86",
   },
   NEOX: {
     PFORK: "0x216490C8E6b33b4d8A2390dADcf9f433E30da60F",
-    FERRY: "0xe0Acb6B117747A7671dC5ce57391694281beF212",
+    FERRY: "0x81aC8AEDdaC85aA14011ab88944aA147472aC525",
   },
 };
 
 export const FERRY_ABI = [
-  "function bridgeOut(uint256 amount, address toOnOtherChain) external",
-  "event BridgeOutRequested(address indexed from, address indexed toOnOtherChain, uint256 amountIn, uint256 amountOut, uint256 feePaid, uint256 nonce)",
+  "function bridgeOut(uint256 amount, address toOnOther) payable",
+  "function nativeFeeWei() view returns (uint256)",
+  "function feeBps() view returns (uint16)",
+  "event BridgeOutRequested(address indexed from, address indexed toOnOtherChain, uint256 amountIn, uint256 amountOut, uint256 pforkFeePaid, uint256 nonce)",
 ];
 
 export const ERC20_ABI = [
