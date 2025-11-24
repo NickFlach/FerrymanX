@@ -15,7 +15,7 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 37953
+localPort = 41617
 externalPort = 3000
 
 [env]
@@ -50,4 +50,4 @@ mockupState = "FULLSTACK"
 [userenv.shared]
 ETH_RPC_URL = "https://eth.llamarpc.com"
 NEOX_RPC_URL = "https://mainnet-2.rpc.banelabs.org"
-VITE_WALLETCONNECT_PROJECT_ID = "701583712de1b8355761f2caf89f24bc"
+VITE_WALLETCONNECT_PROJECT_ID = "8c13ea3951ef07633f98b5ccf459f91d"

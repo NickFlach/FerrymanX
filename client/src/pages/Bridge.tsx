@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useWeb3, NetworkType, WalletType } from "@/hooks/useWeb3";
@@ -724,6 +725,7 @@ export default function Bridge() {
         <DialogContent className="glass-panel border-primary/20 text-white sm:max-w-md max-w-[90vw]">
           <DialogHeader>
             <DialogTitle className="text-center font-cinzel text-xl sm:text-2xl text-primary">Bridge Initiated!</DialogTitle>
+            <DialogDescription className="sr-only">Bridge transaction has been successfully initiated</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center py-4 sm:py-6 space-y-3 sm:space-y-4">
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/20 flex items-center justify-center mb-2 sm:mb-4">

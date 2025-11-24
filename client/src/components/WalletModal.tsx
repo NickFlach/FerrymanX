@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Wallet, Smartphone } from "lucide-react";
 import { WalletType } from "@/hooks/useWeb3";
@@ -26,9 +26,9 @@ export function WalletModal({ open, onOpenChange, onSelectWallet, isConnecting }
           <DialogTitle className="text-center font-cinzel text-2xl text-white">
             Connect Wallet
           </DialogTitle>
-          <p className="text-center text-sm text-gray-400 font-space mt-2">
+          <DialogDescription className="text-center text-sm text-gray-400 font-space mt-2">
             Choose how you want to connect
-          </p>
+          </DialogDescription>
         </DialogHeader>
         
         <div className="flex flex-col gap-3 py-6">
