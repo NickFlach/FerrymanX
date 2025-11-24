@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useWeb3, NetworkType } from "@/hooks/useWeb3";
+import { useWeb3, NetworkType, WalletType } from "@/hooks/useWeb3";
 import { NETWORKS, CONTRACTS, ERC20_ABI, FERRY_ABI } from "@/lib/contracts";
 import { ethers } from "ethers";
 import { 
@@ -20,6 +20,7 @@ import {
   markBridgeAsClaimed,
   type PendingBridge 
 } from "@/lib/bridgeStorage";
+import { WalletModal } from "@/components/WalletModal";
 
 export default function Bridge() {
   const { toast } = useToast();
@@ -36,6 +37,7 @@ export default function Bridge() {
   const [nativeFee, setNativeFee] = useState<string>("0");
   const [pendingBridges, setPendingBridges] = useState<PendingBridge[]>([]);
   const [isClaiming, setIsClaiming] = useState<string | null>(null);
+  const [showWalletModal, setShowWalletModal] = useState(false);
 
   // Determine current network context based on direction
   const sourceNetwork: NetworkType = direction === "eth-neox" ? "ETH" : "NEOX";
@@ -178,7 +180,7 @@ export default function Bridge() {
     }
 
     if (!signer || !account) {
-      connect();
+      handleConnectClick();
       return;
     }
 
@@ -271,9 +273,18 @@ export default function Bridge() {
     }
   };
 
+  const handleWalletSelect = async (type: WalletType) => {
+    await connect(type);
+    setShowWalletModal(false);
+  };
+
+  const handleConnectClick = () => {
+    setShowWalletModal(true);
+  };
+
   const handleClaim = async (bridge: PendingBridge) => {
     if (!signer || !account) {
-      connect();
+      handleConnectClick();
       return;
     }
 
@@ -353,15 +364,15 @@ export default function Bridge() {
       </div>
 
       {/* Header */}
-      <header className="relative z-10 w-full px-6 py-6 flex flex-col md:flex-row justify-between items-center border-b border-white/5 backdrop-blur-sm gap-4">
+      <header className="relative z-10 w-full px-4 sm:px-6 py-4 sm:py-6 flex flex-col md:flex-row justify-between items-center border-b border-white/5 backdrop-blur-sm gap-3 sm:gap-4">
         <div className="flex items-center gap-3">
-          <Ship className="w-8 h-8 text-primary" />
-          <h1 className="text-2xl font-cinzel font-bold text-white tracking-wider">
+          <Ship className="w-7 h-7 sm:w-8 sm:h-8 text-primary" />
+          <h1 className="text-xl sm:text-2xl font-cinzel font-bold text-white tracking-wider">
             FERRYMAN<span className="text-primary">X</span>
           </h1>
         </div>
         
-        <div className="flex items-center gap-3 md:gap-4 flex-wrap justify-center">
+        <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-wrap justify-center">
           <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider font-space border-r border-white/10 pr-4">
             <span className="text-gray-400">Pitchforks:</span>
             <a 
@@ -409,7 +420,7 @@ export default function Bridge() {
               <Button
                   variant="ghost"
                   size="icon"
-                  className="text-gray-400 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  className="text-gray-400 hover:text-destructive hover:bg-destructive/10 transition-colors min-h-[44px] min-w-[44px]"
                   onClick={disconnect}
                   title="Disconnect Wallet"
                   data-testid="button-disconnect"
@@ -419,13 +430,18 @@ export default function Bridge() {
           )}
           <Button 
             variant={account ? "outline" : "default"}
-            className={`font-space tracking-wide ${account ? "border-primary/50 text-primary hover:bg-primary/10" : "bg-primary text-background hover:bg-primary/90"}`}
-            onClick={() => account ? null : connect()}
+            className={`font-space tracking-wide text-sm sm:text-base min-h-[44px] px-3 sm:px-4 ${account ? "border-primary/50 text-primary hover:bg-primary/10" : "bg-primary text-background hover:bg-primary/90"}`}
+            onClick={() => account ? null : handleConnectClick()}
             disabled={isConnecting}
             data-testid="button-connect-wallet"
           >
             <Wallet className="w-4 h-4 mr-2" />
-            {isConnecting ? "Connecting..." : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Connect Wallet"}
+            <span className="hidden sm:inline">
+              {isConnecting ? "Connecting..." : account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Connect Wallet"}
+            </span>
+            <span className="inline sm:hidden">
+              {isConnecting ? "..." : account ? `${account.slice(0, 4)}...${account.slice(-2)}` : "Connect"}
+            </span>
           </Button>
         </div>
       </header>
@@ -439,35 +455,36 @@ export default function Bridge() {
           transition={{ duration: 0.5 }}
           className="w-full max-w-lg"
         >
-          <div className="glass-panel rounded-2xl p-8 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+          <div className="glass-panel rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl backdrop-blur-xl relative overflow-hidden">
             {/* Decorative border glow */}
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50" />
 
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-xl font-cinzel text-gray-300">Bridge Assets</h2>
-              <div className="flex items-center gap-2 text-xs font-space text-gray-500 uppercase tracking-widest">
+            <div className="flex justify-between items-center mb-6 sm:mb-8">
+              <h2 className="text-lg sm:text-xl font-cinzel text-gray-300">Bridge Assets</h2>
+              <div className="flex items-center gap-2 text-[10px] sm:text-xs font-space text-gray-500 uppercase tracking-widest">
                 <div className={`w-2 h-2 rounded-full ${isWrongNetwork ? "bg-red-500" : "bg-green-500"} animate-pulse`} />
-                {isWrongNetwork ? "Wrong Network" : "System Online"}
+                <span className="hidden sm:inline">{isWrongNetwork ? "Wrong Network" : "System Online"}</span>
+                <span className="inline sm:hidden">{isWrongNetwork ? "Wrong" : "OK"}</span>
               </div>
             </div>
 
             {/* Route Selector */}
-            <div className="relative flex flex-col gap-4 mb-8">
+            <div className="relative flex flex-col gap-4 mb-6 sm:mb-8">
               {/* From */}
-              <div className={`p-4 rounded-xl border transition-colors ${direction === "eth-neox" ? "bg-blue-950/30 border-blue-500/30" : "bg-green-950/30 border-green-500/30"}`}>
-                <div className="flex justify-between mb-2">
-                  <span className="text-xs text-gray-400 font-space uppercase">From Network</span>
-                  <span className="text-xs text-gray-400 font-space">Balance: {balance}</span>
+              <div className={`p-3 sm:p-4 rounded-xl border transition-colors ${direction === "eth-neox" ? "bg-blue-950/30 border-blue-500/30" : "bg-green-950/30 border-green-500/30"}`}>
+                <div className="flex justify-between mb-2 flex-wrap gap-1">
+                  <span className="text-[10px] sm:text-xs text-gray-400 font-space uppercase">From Network</span>
+                  <span className="text-[10px] sm:text-xs text-gray-400 font-space">Balance: {parseFloat(balance).toFixed(2)}</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${direction === "eth-neox" ? "bg-blue-600" : "bg-green-600"}`}>
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-xs ${direction === "eth-neox" ? "bg-blue-600" : "bg-green-600"}`}>
                     {direction === "eth-neox" ? "E" : "N"}
                   </div>
-                  <span className="text-lg font-bold font-space">
+                  <span className="text-base sm:text-lg font-bold font-space">
                     {direction === "eth-neox" ? "Ethereum" : "Neo X"}
                   </span>
                 </div>
-                <div className="mt-2 text-[10px] text-gray-500 font-mono truncate">
+                <div className="mt-2 text-[9px] sm:text-[10px] text-gray-500 font-mono truncate">
                   Contract: {pforkAddress}
                 </div>
               </div>
@@ -477,40 +494,42 @@ export default function Bridge() {
                 <Button 
                   size="icon" 
                   variant="outline" 
-                  className="rounded-full bg-background border-white/10 hover:bg-white/5 hover:border-primary/50 transition-all h-10 w-10"
+                  className="rounded-full bg-background border-white/10 hover:bg-white/5 hover:border-primary/50 transition-all h-10 w-10 sm:h-12 sm:w-12 min-h-[44px] min-w-[44px]"
                   onClick={toggleDirection}
+                  data-testid="button-toggle-direction"
                 >
-                  <ArrowRightLeft className="w-4 h-4 text-primary" />
+                  <ArrowRightLeft className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                 </Button>
               </div>
 
               {/* To */}
-              <div className={`p-4 rounded-xl border transition-colors ${direction === "eth-neox" ? "bg-green-950/30 border-green-500/30" : "bg-blue-950/30 border-blue-500/30"}`}>
+              <div className={`p-3 sm:p-4 rounded-xl border transition-colors ${direction === "eth-neox" ? "bg-green-950/30 border-green-500/30" : "bg-blue-950/30 border-blue-500/30"}`}>
                 <div className="flex justify-between mb-2">
-                  <span className="text-xs text-gray-400 font-space uppercase">To Network</span>
+                  <span className="text-[10px] sm:text-xs text-gray-400 font-space uppercase">To Network</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${direction === "eth-neox" ? "bg-green-600" : "bg-blue-600"}`}>
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-xs ${direction === "eth-neox" ? "bg-green-600" : "bg-blue-600"}`}>
                     {direction === "eth-neox" ? "N" : "E"}
                   </div>
-                  <span className="text-lg font-bold font-space">
+                  <span className="text-base sm:text-lg font-bold font-space">
                     {direction === "eth-neox" ? "Neo X" : "Ethereum"}
                   </span>
                 </div>
-                <div className="mt-2 text-[10px] text-gray-500 font-mono truncate">
+                <div className="mt-2 text-[9px] sm:text-[10px] text-gray-500 font-mono truncate">
                    Contract: {CONTRACTS[destNetwork].PFORK}
                 </div>
               </div>
             </div>
 
             {/* Amount Input */}
-            <div className="mb-8">
+            <div className="mb-6 sm:mb-8">
               <div className="flex justify-between mb-2">
-                <label className="text-xs text-gray-400 font-space uppercase">Amount to Send</label>
+                <label className="text-[10px] sm:text-xs text-gray-400 font-space uppercase">Amount to Send</label>
                 {account && (
                   <button 
-                    className="text-xs text-primary hover:text-primary/80 font-space uppercase"
+                    className="text-[10px] sm:text-xs text-primary hover:text-primary/80 font-space uppercase min-h-[44px] -my-3 px-2"
                     onClick={() => setAmount(balance)}
+                    data-testid="button-max-amount"
                   >
                     Max
                   </button>
@@ -522,10 +541,11 @@ export default function Bridge() {
                   placeholder="0.00" 
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="h-16 pl-4 pr-24 text-2xl font-space bg-white/5 border-white/10 focus:border-primary/50 focus:ring-primary/20" 
+                  className="h-14 sm:h-16 pl-4 pr-20 sm:pr-24 text-xl sm:text-2xl font-space bg-white/5 border-white/10 focus:border-primary/50 focus:ring-primary/20" 
+                  data-testid="input-amount"
                 />
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
-                  <span className="font-bold text-sm text-gray-400">PFORK</span>
+                <div className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+                  <span className="font-bold text-xs sm:text-sm text-gray-400">PFORK</span>
                 </div>
               </div>
             </div>
@@ -578,28 +598,30 @@ export default function Bridge() {
             )}
 
             {/* Fee Info */}
-            <div className="mt-6 flex justify-between items-center text-xs text-gray-500 font-mono">
-              <span>Native Fee: {ethers.formatEther(nativeFee || "0")} {NETWORKS[sourceNetwork].currency}</span>
-              <span>Est. Time: ~2 mins</span>
+            <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-[10px] sm:text-xs text-gray-500 font-mono">
+              <span>Fee: {parseFloat(ethers.formatEther(nativeFee || "0")).toFixed(4)} {NETWORKS[sourceNetwork].currency}</span>
+              <span>Time: ~2 mins</span>
             </div>
 
           </div>
 
           {/* Helper Links */}
-          <div className="mt-8 flex justify-center gap-6">
+          <div className="mt-6 sm:mt-8 flex justify-center gap-4 sm:gap-6">
              <a 
                 href={`${NETWORKS[sourceNetwork].explorer}/address/${ferryAddress}`}
                 target="_blank" 
                 rel="noreferrer"
-                className="text-gray-500 hover:text-primary text-xs font-space uppercase tracking-widest flex items-center gap-2 transition-colors"
+                className="text-gray-500 hover:text-primary text-[10px] sm:text-xs font-space uppercase tracking-widest flex items-center gap-2 transition-colors min-h-[44px]"
+                data-testid="link-contract"
               >
-              <History className="w-4 h-4" /> Contract
+              <History className="w-4 h-4" /> <span>Contract</span>
             </a>
             <a 
                 href="#" 
-                className="text-gray-500 hover:text-primary text-xs font-space uppercase tracking-widest flex items-center gap-2 transition-colors"
+                className="text-gray-500 hover:text-primary text-[10px] sm:text-xs font-space uppercase tracking-widest flex items-center gap-2 transition-colors min-h-[44px]"
+                data-testid="link-audit"
             >
-              <ShieldCheck className="w-4 h-4" /> Audit
+              <ShieldCheck className="w-4 h-4" /> <span>Audit</span>
             </a>
           </div>
         </motion.div>
@@ -610,12 +632,12 @@ export default function Bridge() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="w-full max-w-lg mt-8"
+            className="w-full max-w-lg mt-6 sm:mt-8"
           >
-            <div className="glass-panel rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
-              <div className="flex items-center gap-3 mb-6">
-                <Clock className="w-5 h-5 text-primary" />
-                <h3 className="text-lg font-cinzel text-gray-300">Pending Claims</h3>
+            <div className="glass-panel rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl">
+              <div className="flex items-center gap-3 mb-4 sm:mb-6">
+                <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+                <h3 className="text-base sm:text-lg font-cinzel text-gray-300">Pending Claims</h3>
                 <span className="ml-auto text-xs font-space text-gray-500 bg-primary/10 px-2 py-1 rounded">
                   {pendingBridges.length}
                 </span>
@@ -629,13 +651,13 @@ export default function Bridge() {
                   return (
                     <div 
                       key={bridge.messageId}
-                      className="bg-black/20 rounded-lg p-4 border border-white/5 hover:border-primary/20 transition-all"
+                      className="bg-black/20 rounded-lg p-3 sm:p-4 border border-white/5 hover:border-primary/20 transition-all"
                       data-testid={`pending-bridge-${bridge.messageId}`}
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-lg font-bold text-white font-space">
-                            {ethers.formatUnits(bridge.amountOut, 18)} PFORK
+                          <span className="text-base sm:text-lg font-bold text-white font-space">
+                            {parseFloat(ethers.formatUnits(bridge.amountOut, 18)).toFixed(2)} PFORK
                           </span>
                         </div>
                         <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono">
@@ -649,29 +671,29 @@ export default function Bridge() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-[10px] text-gray-500 mb-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0 text-[9px] sm:text-[10px] text-gray-500 mb-3">
                         <span className="font-mono">
-                          {new Date(bridge.timestamp).toLocaleString()}
+                          {new Date(bridge.timestamp).toLocaleDateString()} {new Date(bridge.timestamp).toLocaleTimeString()}
                         </span>
                         <a
                           href={`${NETWORKS[bridge.sourceChain].explorer}/tx/${bridge.sourceTxHash}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-primary hover:underline flex items-center gap-1"
+                          className="text-primary hover:underline flex items-center gap-1 min-h-[44px] sm:min-h-0 -my-2 sm:my-0"
                         >
                           Tx <ExternalLink className="w-2 h-2" />
                         </a>
                       </div>
 
                       {!isOnCorrectNetwork && (
-                        <div className="mb-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 rounded text-[10px] text-amber-400 font-space text-center">
+                        <div className="mb-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 rounded text-[9px] sm:text-[10px] text-amber-400 font-space text-center">
                           Switch to {NETWORKS[bridge.destChain].name} to claim
                         </div>
                       )}
 
                       <Button
                         size="sm"
-                        className="w-full bg-primary text-background font-bold font-space hover:bg-primary/90"
+                        className="w-full bg-primary text-background font-bold font-space hover:bg-primary/90 min-h-[44px] text-sm sm:text-base"
                         onClick={() => handleClaim(bridge)}
                         disabled={isClaimingThis}
                         data-testid={`button-claim-${bridge.messageId}`}
@@ -682,7 +704,10 @@ export default function Bridge() {
                             Claiming...
                           </div>
                         ) : (
-                          `Claim on ${NETWORKS[bridge.destChain].name}`
+                          <span className="hidden sm:inline">Claim on {NETWORKS[bridge.destChain].name}</span>
+                        )}
+                        {!isClaimingThis && (
+                          <span className="inline sm:hidden">Claim</span>
                         )}
                       </Button>
                     </div>
@@ -696,41 +721,41 @@ export default function Bridge() {
 
       {/* Success Dialog */}
       <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
-        <DialogContent className="glass-panel border-primary/20 text-white sm:max-w-md">
+        <DialogContent className="glass-panel border-primary/20 text-white sm:max-w-md max-w-[90vw]">
           <DialogHeader>
-            <DialogTitle className="text-center font-cinzel text-2xl text-primary">Bridge Initiated!</DialogTitle>
+            <DialogTitle className="text-center font-cinzel text-xl sm:text-2xl text-primary">Bridge Initiated!</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col items-center py-6 space-y-4">
-            <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mb-4">
-              <CheckCircle2 className="w-10 h-10 text-primary" />
+          <div className="flex flex-col items-center py-4 sm:py-6 space-y-3 sm:space-y-4">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/20 flex items-center justify-center mb-2 sm:mb-4">
+              <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 text-primary" />
             </div>
-            <p className="text-center text-gray-300 font-space">
+            <p className="text-center text-sm sm:text-base text-gray-300 font-space px-2">
               Your tokens have been locked on <span className="text-white font-bold">{NETWORKS[sourceNetwork].name}</span>.
             </p>
-            <div className="w-full bg-black/30 p-4 rounded-lg mt-4">
-              <div className="flex justify-between text-xs text-gray-500 mb-2 font-mono">
+            <div className="w-full bg-black/30 p-3 sm:p-4 rounded-lg mt-2 sm:mt-4">
+              <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0 text-[10px] sm:text-xs text-gray-500 mb-2 font-mono">
                 <span>Bridge Out Tx</span>
                 <a 
                   href={`${NETWORKS[sourceNetwork].explorer}/tx/${txHash}`} 
                   target="_blank"
                   rel="noreferrer"
-                  className="truncate w-32 text-right text-primary hover:underline flex items-center gap-1 ml-auto"
+                  className="text-primary hover:underline flex items-center gap-1 min-h-[44px] sm:min-h-0 -my-2 sm:my-0"
                   data-testid="link-bridge-tx"
                 >
                   {txHash.slice(0, 6)}...{txHash.slice(-4)}
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
-              <div className="flex justify-between text-xs text-gray-500 font-mono">
+              <div className="flex justify-between text-[10px] sm:text-xs text-gray-500 font-mono">
                 <span>Next Step</span>
                 <span className="text-green-400">Claim on {NETWORKS[destNetwork].name}</span>
               </div>
             </div>
-            <div className="text-xs text-gray-500 text-center mt-2 px-4">
+            <div className="text-[10px] sm:text-xs text-gray-500 text-center mt-2 px-2 sm:px-4">
               Your bridge request has been saved. Scroll down to the "Pending Claims" section to claim your tokens on {NETWORKS[destNetwork].name}.
             </div>
             <Button 
-              className="w-full mt-6 bg-primary hover:bg-primary/90 text-background font-space font-bold"
+              className="w-full mt-4 sm:mt-6 bg-primary hover:bg-primary/90 text-background font-space font-bold min-h-[44px]"
               onClick={() => setShowSuccess(false)}
               data-testid="button-close-success"
             >
@@ -739,6 +764,13 @@ export default function Bridge() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <WalletModal
+        open={showWalletModal}
+        onOpenChange={setShowWalletModal}
+        onSelectWallet={handleWalletSelect}
+        isConnecting={isConnecting}
+      />
     </div>
   );
 }
