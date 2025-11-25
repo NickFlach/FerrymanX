@@ -10,7 +10,10 @@ import {
   BarChart3,
   Sparkles,
   Brain,
-  Target
+  Target,
+  Loader2,
+  CheckCircle,
+  ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,8 +28,33 @@ import {
   type QuantumBridge 
 } from "@/lib/quantumEngine";
 import { getPendingBridges, getBridges } from "@/lib/bridgeStorage";
+import { useWeb3 } from "@/hooks/useWeb3";
+import { useToast } from "@/hooks/use-toast";
+import { ethers } from "ethers";
+import { NFT_CONTRACTS, QUANTUM_SIGNATURE_NFT_ABI, getOpenSeaUrl, getExplorerUrl } from "@/lib/nftContract";
+import { Navigation } from "@/components/Navigation";
 
-const QuantumArtCard = memo(({ bridge, index }: { bridge: QuantumBridge; index: number }) => {
+interface QuantumArtCardProps {
+  bridge: QuantumBridge;
+  index: number;
+  onMint?: (bridge: QuantumBridge) => void;
+  isMinting?: boolean;
+  isMinted?: boolean;
+  mintedTokenId?: string;
+  chainId?: number;
+  account?: string | null;
+}
+
+const QuantumArtCard = memo(({ 
+  bridge, 
+  index, 
+  onMint, 
+  isMinting = false, 
+  isMinted = false,
+  mintedTokenId,
+  chainId,
+  account
+}: QuantumArtCardProps) => {
   const [artUrl, setArtUrl] = useState<string>('');
   const [isClient, setIsClient] = useState(false);
   
@@ -109,7 +137,7 @@ const QuantumArtCard = memo(({ bridge, index }: { bridge: QuantumBridge; index: 
               {bridge.messageId.slice(0, 8)}...
             </span>
           </div>
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center mb-3">
             <span className="text-sm font-semibold">
               {parseFloat(bridge.amount).toFixed(2)} PFORK
             </span>
@@ -117,6 +145,47 @@ const QuantumArtCard = memo(({ bridge, index }: { bridge: QuantumBridge; index: 
               Entropy: {entropy.toFixed(3)}
             </span>
           </div>
+          
+          {account && onMint && (
+            <div className="mt-3 pt-3 border-t border-white/10">
+              {isMinted && mintedTokenId && chainId ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-green-400 text-sm">
+                    <CheckCircle className="w-4 h-4" />
+                    <span data-testid={`text-minted-${index}`}>Minted</span>
+                  </div>
+                  <a
+                    href={getOpenSeaUrl(chainId, chainId === 1 ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX, mintedTokenId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    data-testid={`link-opensea-${index}`}
+                  >
+                    View on OpenSea <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              ) : (
+                <Button
+                  onClick={() => onMint(bridge)}
+                  disabled={isMinting}
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  data-testid={`button-mint-${index}`}
+                >
+                  {isMinting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Minting...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Mint NFT
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </motion.div>
@@ -184,6 +253,9 @@ export default function QuantumFerry() {
   const particleSystemRef = useRef(new ParticleSystem());
   const analyticsRef = useRef(new PredictiveAnalytics());
   
+  const { account, chainId, signer } = useWeb3();
+  const { toast } = useToast();
+  
   const [quantumBridges, setQuantumBridges] = useState<QuantumBridge[]>([]);
   const [selectedArt, setSelectedArt] = useState<string | null>(null);
   const [selectedArtUrl, setSelectedArtUrl] = useState<string>('');
@@ -192,6 +264,9 @@ export default function QuantumFerry() {
   const [isClient, setIsClient] = useState(false);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const lastSpawnRef = useRef(0);
+  
+  const [mintingStatus, setMintingStatus] = useState<Record<string, boolean>>({});
+  const [mintedBridges, setMintedBridges] = useState<Record<string, string>>({});
   
   useEffect(() => {
     setIsClient(true);
@@ -238,6 +313,159 @@ export default function QuantumFerry() {
     
     return () => clearInterval(interval);
   }, [quantumBridges.length]);
+
+  useEffect(() => {
+    if (!signer || !chainId || quantumBridges.length === 0) return;
+
+    const checkMintedStatus = async () => {
+      try {
+        const nftAddress = chainId === 1 ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX;
+        if (nftAddress === "0x0000000000000000000000000000000000000000") return;
+
+        const contract = new ethers.Contract(nftAddress, QUANTUM_SIGNATURE_NFT_ABI, signer);
+        
+        const mintedStatus: Record<string, string> = {};
+        
+        for (const bridge of quantumBridges) {
+          try {
+            const isMinted = await contract.minted(bridge.messageId);
+            if (isMinted) {
+              const tokenId = await contract.messageIdToTokenId(bridge.messageId);
+              mintedStatus[bridge.messageId] = tokenId.toString();
+            }
+          } catch (error) {
+            console.error(`Error checking minted status for ${bridge.messageId}:`, error);
+          }
+        }
+        
+        setMintedBridges(mintedStatus);
+      } catch (error) {
+        console.error("Error checking minted status:", error);
+      }
+    };
+
+    checkMintedStatus();
+  }, [signer, chainId, quantumBridges]);
+
+  const handleMint = async (bridge: QuantumBridge) => {
+    if (!signer || !account || !chainId) {
+      toast({
+        title: "Wallet not connected",
+        description: "Please connect your wallet to mint NFTs.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const nftAddress = chainId === 1 ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX;
+    if (nftAddress === "0x0000000000000000000000000000000000000000") {
+      toast({
+        title: "NFT Contract not deployed",
+        description: "The NFT contract has not been deployed on this chain yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setMintingStatus(prev => ({ ...prev, [bridge.messageId]: true }));
+
+    try {
+      const sourceChainId = bridge.sourceChain === "ETH" ? 1 : 47763;
+      const destChainId = bridge.destChain === "ETH" ? 1 : 47763;
+
+      const attestationResponse = await fetch("/api/nft/attestation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId: bridge.messageId,
+          bridger: account,
+          amount: ethers.parseEther(bridge.amount).toString(),
+          timestamp: bridge.timestamp,
+          sourceChain: sourceChainId,
+          destChain: destChainId,
+          txHash: bridge.signature,
+          contractAddress: nftAddress,
+        }),
+      });
+
+      if (!attestationResponse.ok) {
+        throw new Error("Failed to get attestation signature");
+      }
+
+      const { signature } = await attestationResponse.json();
+
+      const contract = new ethers.Contract(nftAddress, QUANTUM_SIGNATURE_NFT_ABI, signer);
+
+      const tx = await contract.mintSignature(
+        bridge.messageId,
+        account,
+        ethers.parseEther(bridge.amount),
+        bridge.timestamp,
+        sourceChainId,
+        destChainId,
+        signature
+      );
+
+      toast({
+        title: "Minting in progress",
+        description: (
+          <div className="flex flex-col gap-2">
+            <span>Transaction submitted</span>
+            <a
+              href={getExplorerUrl(chainId, tx.hash)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 flex items-center gap-1"
+            >
+              View on Explorer <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        ),
+      });
+
+      const receipt = await tx.wait();
+
+      const mintEvent = receipt.logs
+        .map((log: any) => {
+          try {
+            return contract.interface.parseLog(log);
+          } catch {
+            return null;
+          }
+        })
+        .find((event: any) => event?.name === "QuantumSignatureMinted");
+
+      const tokenId = mintEvent?.args?.tokenId?.toString() || "0";
+
+      setMintedBridges(prev => ({ ...prev, [bridge.messageId]: tokenId }));
+
+      toast({
+        title: "NFT Minted Successfully!",
+        description: (
+          <div className="flex flex-col gap-2">
+            <span>Your Quantum Signature NFT has been minted</span>
+            <a
+              href={getOpenSeaUrl(chainId, nftAddress, tokenId)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 flex items-center gap-1"
+            >
+              View on OpenSea <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        ),
+      });
+    } catch (error: any) {
+      console.error("Minting error:", error);
+      toast({
+        title: "Minting failed",
+        description: error.message || "Failed to mint NFT. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setMintingStatus(prev => ({ ...prev, [bridge.messageId]: false }));
+    }
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -380,13 +608,16 @@ export default function QuantumFerry() {
 
   return (
     <div className="min-h-screen bg-black text-white overflow-hidden">
+      {/* Navigation */}
+      <Navigation />
+      
       <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-black to-blue-900/20" />
       
       <div className="relative z-10">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="container mx-auto px-4 py-8"
+          className="container mx-auto px-4 py-8 pt-24"
         >
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -557,7 +788,16 @@ export default function QuantumFerry() {
                 <AnimatePresence>
                   {quantumBridges.slice(0, 12).map((bridge, idx) => (
                     <div key={bridge.messageId} onClick={() => setSelectedArt(bridge.signature)}>
-                      <QuantumArtCard bridge={bridge} index={idx} />
+                      <QuantumArtCard 
+                        bridge={bridge} 
+                        index={idx}
+                        onMint={handleMint}
+                        isMinting={mintingStatus[bridge.messageId]}
+                        isMinted={!!mintedBridges[bridge.messageId]}
+                        mintedTokenId={mintedBridges[bridge.messageId]}
+                        chainId={chainId || undefined}
+                        account={account}
+                      />
                     </div>
                   ))}
                 </AnimatePresence>

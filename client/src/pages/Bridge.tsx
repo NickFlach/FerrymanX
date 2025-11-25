@@ -22,6 +22,7 @@ import {
   type PendingBridge 
 } from "@/lib/bridgeStorage";
 import { WalletModal } from "@/components/WalletModal";
+import { Navigation } from "@/components/Navigation";
 
 export default function Bridge() {
   const { toast } = useToast();
@@ -358,22 +359,18 @@ export default function Bridge() {
 
   return (
     <div className="min-h-screen w-full bg-background relative overflow-hidden flex flex-col">
+      {/* Navigation */}
+      <Navigation />
+      
       {/* Background Elements */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/10 rounded-full blur-[100px]" />
         <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-green-500/10 rounded-full blur-[100px]" />
       </div>
 
-      {/* Header */}
-      <header className="relative z-10 w-full px-4 sm:px-6 py-4 sm:py-6 flex flex-col md:flex-row justify-between items-center border-b border-white/5 backdrop-blur-sm gap-3 sm:gap-4">
-        <div className="flex items-center gap-3">
-          <Ship className="w-7 h-7 sm:w-8 sm:h-8 text-primary" />
-          <h1 className="text-xl sm:text-2xl font-cinzel font-bold text-white tracking-wider">
-            FERRYMAN<span className="text-primary">X</span>
-          </h1>
-        </div>
-        
-        <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-wrap justify-center">
+      {/* Header - Wallet & Ecosystem Links */}
+      <header className="relative z-10 w-full px-4 sm:px-6 pt-20 sm:pt-24 pb-4 sm:pb-6 flex justify-end items-center border-b border-white/5 backdrop-blur-sm gap-3 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-wrap">
           <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider font-space border-r border-white/10 pr-4">
             <span className="text-gray-400">Pitchforks:</span>
             <a 
@@ -418,16 +415,16 @@ export default function Bridge() {
           </div>
           
           {account && (
-              <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-gray-400 hover:text-destructive hover:bg-destructive/10 transition-colors min-h-[44px] min-w-[44px]"
-                  onClick={disconnect}
-                  title="Disconnect Wallet"
-                  data-testid="button-disconnect"
-              >
-                  <LogOut className="w-5 h-5" />
-              </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-gray-400 hover:text-destructive hover:bg-destructive/10 transition-colors min-h-[44px] min-w-[44px]"
+              onClick={disconnect}
+              title="Disconnect Wallet"
+              data-testid="button-disconnect"
+            >
+              <LogOut className="w-5 h-5" />
+            </Button>
           )}
           <Button 
             variant={account ? "outline" : "default"}

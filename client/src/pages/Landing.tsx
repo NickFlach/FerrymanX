@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { ArrowRight, Anchor, Volume2, VolumeX, Sparkles } from "lucide-react";
+import { Navigation } from "@/components/Navigation";
 // @ts-ignore
 import ferryVideo from "@assets/generated_videos/mystical_ferryman_rowing_ninjas_across_a_moonlit_river.mp4";
 // @ts-ignore
@@ -31,6 +32,9 @@ export default function Landing() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black text-white">
+      {/* Navigation */}
+      <Navigation />
+      
       {/* Background Audio */}
       <audio ref={audioRef} loop>
         <source src={backgroundMusic} type="audio/mpeg" />
