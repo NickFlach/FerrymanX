@@ -40,6 +40,7 @@ contract QuantumSignatureNFT is ERC721, Ownable {
     
     address public immutable ferryContract;
     uint8 public immutable chainId;
+    address public signer;
     
     event QuantumSignatureMinted(
         uint256 indexed tokenId,
@@ -47,6 +48,8 @@ contract QuantumSignatureNFT is ERC721, Ownable {
         address indexed bridger,
         string quantumState
     );
+    
+    event SignerUpdated(address indexed oldSigner, address indexed newSigner);
 
     constructor(
         address _ferryContract,
@@ -54,6 +57,18 @@ contract QuantumSignatureNFT is ERC721, Ownable {
     ) ERC721("Quantum Signature", "QSIG") Ownable(msg.sender) {
         ferryContract = _ferryContract;
         chainId = _chainId;
+        signer = msg.sender;
+    }
+    
+    /**
+     * @dev Set the authorized signer address (only owner can call)
+     * @param _signer Address authorized to sign mint attestations
+     */
+    function setSigner(address _signer) external onlyOwner {
+        require(_signer != address(0), "Invalid signer address");
+        address oldSigner = signer;
+        signer = _signer;
+        emit SignerUpdated(oldSigner, _signer);
     }
 
     /**
@@ -90,8 +105,8 @@ contract QuantumSignatureNFT is ERC721, Ownable {
         ));
         
         bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
-        address signer = ECDSA.recover(ethSignedMessageHash, signature);
-        require(signer == owner(), "Invalid signature");
+        address recovered = ECDSA.recover(ethSignedMessageHash, signature);
+        require(recovered == signer, "Invalid signature");
         
         minted[messageId] = true;
         
@@ -163,6 +178,42 @@ contract QuantumSignatureNFT is ERC721, Ownable {
     }
 
     /**
+     * @dev Generate a single shape SVG string
+     */
+    function _generateSingleShape(uint256 seed, string memory color) internal pure returns (string memory) {
+        uint256 x = (seed % 350) + 25;
+        uint256 y = ((seed >> 8) % 350) + 25;
+        uint256 size = ((seed >> 16) % 60) + 20;
+        uint256 opacity = ((seed >> 24) % 60) + 20;
+        uint256 shapeType = seed % 3;
+        
+        if (shapeType == 0) {
+            return string(abi.encodePacked(
+                '<circle cx="', x.toString(), '" cy="', y.toString(),
+                '" r="', size.toString(), '" fill="', color,
+                '" opacity="0.', opacity.toString(), '"/>'
+            ));
+        }
+        
+        if (shapeType == 1) {
+            uint256 half = size / 2;
+            return string(abi.encodePacked(
+                '<rect x="', (x - half).toString(), '" y="', (y - half).toString(),
+                '" width="', size.toString(), '" height="', size.toString(),
+                '" fill="', color, '" opacity="0.', opacity.toString(), '"/>'
+            ));
+        }
+        
+        uint256 offset = size / 2;
+        return string(abi.encodePacked(
+            '<polygon points="', x.toString(), ',', (y - offset).toString(), ' ',
+            (x + offset).toString(), ',', (y + offset).toString(), ' ',
+            (x - offset).toString(), ',', (y + offset).toString(),
+            '" fill="', color, '" opacity="0.', opacity.toString(), '"/>'
+        ));
+    }
+    
+    /**
      * @dev Generate deterministic geometric shapes from seed
      */
     function _generateShapes(uint256 seed, string memory color) internal pure returns (string memory) {
@@ -171,60 +222,7 @@ contract QuantumSignatureNFT is ERC721, Ownable {
         
         for (uint256 i = 0; i < numShapes; i++) {
             seed = uint256(keccak256(abi.encodePacked(seed, i)));
-            
-            uint256 x = (seed % 350) + 25;
-            uint256 y = ((seed >> 8) % 350) + 25;
-            uint256 size = ((seed >> 16) % 60) + 20;
-            uint256 opacity = ((seed >> 24) % 60) + 20;
-            uint256 shapeType = seed % 3;
-            
-            if (shapeType == 0) {
-                output = string(abi.encodePacked(
-                    output,
-                    '<circle cx="',
-                    x.toString(),
-                    '" cy="',
-                    y.toString(),
-                    '" r="',
-                    size.toString(),
-                    '" fill="',
-                    color,
-                    '" opacity="0.',
-                    opacity.toString(),
-                    '"/>'
-                ));
-            } else if (shapeType == 1) {
-                output = string(abi.encodePacked(
-                    output,
-                    '<rect x="',
-                    (x - size / 2).toString(),
-                    '" y="',
-                    (y - size / 2).toString(),
-                    '" width="',
-                    size.toString(),
-                    '" height="',
-                    size.toString(),
-                    '" fill="',
-                    color,
-                    '" opacity="0.',
-                    opacity.toString(),
-                    '"/>'
-                ));
-            } else {
-                uint256 offset = size / 2;
-                output = string(abi.encodePacked(
-                    output,
-                    '<polygon points="',
-                    x.toString(), ',', (y - offset).toString(), ' ',
-                    (x + offset).toString(), ',', (y + offset).toString(), ' ',
-                    (x - offset).toString(), ',', (y + offset).toString(),
-                    '" fill="',
-                    color,
-                    '" opacity="0.',
-                    opacity.toString(),
-                    '"/>'
-                ));
-            }
+            output = string(abi.encodePacked(output, _generateSingleShape(seed, color)));
         }
         
         return output;
