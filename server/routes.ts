@@ -159,8 +159,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
         
-        const existingSigned = await storage.checkNftTransactionSigned(txHash.toLowerCase(), validatedLogIndex, sourceChain);
-        if (existingSigned) {
+        // Check if NFT was actually minted on-chain (not just if we signed it)
+        const nftProvider = sourceChain === 1 ? ethProvider : neoxProvider;
+        const nftContractAddress = sourceChain === 1 ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX;
+        const nftContract = new ethers.Contract(
+          nftContractAddress,
+          ["function minted(bytes32 messageId) public view returns (bool)"],
+          nftProvider
+        );
+        
+        const alreadyMinted = await nftContract.minted(messageId);
+        if (alreadyMinted) {
           return res.status(409).json({ 
             error: "This bridge event has already been used to mint an NFT. Each bridge can only mint one NFT." 
           });
@@ -210,14 +219,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Sign using EIP-712 typed data
       const signature = await wallet.signTypedData(domain, types, message);
       
-      await storage.recordNftTransactionSigned({
-        txHash: txHash.toLowerCase(),
-        logIndex: validatedLogIndex,
-        sourceChain,
-        bridger: bridger.toLowerCase(),
-        messageId,
-        amount: amount.toString(),
-      });
+      // Record signature attempt (but user might not actually mint if tx fails)
+      // This is OK because we check on-chain minted status above
+      try {
+        await storage.recordNftTransactionSigned({
+          txHash: txHash.toLowerCase(),
+          logIndex: validatedLogIndex,
+          sourceChain,
+          bridger: bridger.toLowerCase(),
+          messageId,
+          amount: amount.toString(),
+        });
+      } catch (dbError) {
+        // Ignore duplicate key errors - just means we already signed for this before
+        log(`Database record skipped (already exists): ${messageId.slice(0, 10)}...`, "nft");
+      }
       
       log(`Signed NFT attestation for verified bridge ${messageId.slice(0, 10)}... by ${bridger.slice(0, 10)}... (txHash: ${txHash.slice(0, 10)}...)`, "nft");
       
