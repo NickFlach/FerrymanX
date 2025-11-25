@@ -21,6 +21,7 @@ import {
   getBridges, 
   markBridgeAsClaimed,
   markBridgeAsNFTMinted,
+  clearBridgeHistory,
   type PendingBridge 
 } from "@/lib/bridgeStorage";
 import { WalletModal } from "@/components/WalletModal";
@@ -519,6 +520,17 @@ export default function Bridge() {
     }
   };
 
+  const handleClearHistory = () => {
+    if (confirm("Clear all bridge history? This cannot be undone.")) {
+      clearBridgeHistory();
+      setPendingBridges([]);
+      toast({
+        title: "History Cleared",
+        description: "All bridge history has been removed.",
+      });
+    }
+  };
+
   const toggleDirection = () => {
     setDirection(prev => prev === "eth-neox" ? "neox-eth" : "eth-neox");
   };
@@ -808,6 +820,15 @@ export default function Bridge() {
                   <span className="ml-auto text-xs font-space text-gray-500 bg-primary/10 px-2 py-1 rounded">
                     {pendingBridges.length}
                   </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClearHistory}
+                    className="text-xs text-gray-500 hover:text-red-400"
+                    data-testid="button-clear-history"
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
                 </div>
                 <p className="text-xs text-gray-400 font-space">
                   💡 Mint your NFT anytime on the source chain • Then claim tokens on destination
