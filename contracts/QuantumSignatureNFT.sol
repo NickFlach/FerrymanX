@@ -27,8 +27,8 @@ contract QuantumSignatureNFT is ERC721, Ownable {
         address bridger;
         uint256 amount;
         uint256 timestamp;
-        uint8 sourceChain;
-        uint8 destChain;
+        uint256 sourceChain;
+        uint256 destChain;
         string quantumState;
     }
 
@@ -39,7 +39,7 @@ contract QuantumSignatureNFT is ERC721, Ownable {
     mapping(uint256 => BridgeMetadata) public tokenMetadata;
     
     address public immutable ferryContract;
-    uint8 public immutable chainId;
+    uint256 public immutable chainId;
     address public signer;
     
     event QuantumSignatureMinted(
@@ -53,7 +53,7 @@ contract QuantumSignatureNFT is ERC721, Ownable {
 
     constructor(
         address _ferryContract,
-        uint8 _chainId
+        uint256 _chainId
     ) ERC721("Quantum Signature", "QSIG") Ownable(msg.sender) {
         ferryContract = _ferryContract;
         chainId = _chainId;
@@ -86,8 +86,8 @@ contract QuantumSignatureNFT is ERC721, Ownable {
         address bridger,
         uint256 amount,
         uint256 timestamp,
-        uint8 sourceChain,
-        uint8 destChain,
+        uint256 sourceChain,
+        uint256 destChain,
         bytes memory signature
     ) external returns (uint256) {
         require(!minted[messageId], "Already minted");
