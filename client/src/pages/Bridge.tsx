@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves, ExternalLink, CheckCircle2, Loader2, LogOut, Clock } from "lucide-react";
+import { ArrowRightLeft, Wallet, ShieldCheck, History, X, Ship, Waves, ExternalLink, CheckCircle2, Loader2, LogOut, Clock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,6 +23,7 @@ import {
 } from "@/lib/bridgeStorage";
 import { WalletModal } from "@/components/WalletModal";
 import { Navigation } from "@/components/Navigation";
+import { NFT_CONTRACTS, QUANTUM_SIGNATURE_NFT_ABI, getOpenSeaUrl } from "@/lib/nftContract";
 
 export default function Bridge() {
   const { toast } = useToast();
@@ -40,6 +41,8 @@ export default function Bridge() {
   const [pendingBridges, setPendingBridges] = useState<PendingBridge[]>([]);
   const [isClaiming, setIsClaiming] = useState<string | null>(null);
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [isMinting, setIsMinting] = useState<string | null>(null);
+  const [mintedNFTs, setMintedNFTs] = useState<Record<string, string>>({});
 
   // Determine current network context based on direction
   const sourceNetwork: NetworkType = direction === "eth-neox" ? "ETH" : "NEOX";
@@ -348,6 +351,119 @@ export default function Bridge() {
       });
     } finally {
       setIsClaiming(null);
+    }
+  };
+
+  const handleMintNFT = async (bridge: PendingBridge) => {
+    if (!signer || !account) {
+      handleConnectClick();
+      return;
+    }
+
+    const sourceChainId = bridge.sourceChain === "ETH" ? 1 : 47763;
+    const destChainId = bridge.destChain === "ETH" ? 1 : 47763;
+    
+    // Check if on correct source network (where the bridge originated)
+    if (chainId !== sourceChainId) {
+      switchNetwork(bridge.sourceChain);
+      toast({
+        title: "Network Switch Required",
+        description: `Switch to ${NETWORKS[bridge.sourceChain].name} to mint your NFT`,
+        duration: 5000,
+      });
+      return;
+    }
+
+    try {
+      setIsMinting(bridge.messageId);
+      
+      // Call backend to get attestation with full bridge metadata (timestamp in seconds, chain IDs as numbers)
+      const response = await fetch('/api/nft/attestation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId: bridge.messageId,
+          bridger: bridge.from,
+          amount: bridge.amountOut,
+          timestamp: Math.floor(bridge.timestamp / 1000),
+          sourceChain: sourceChainId,
+          destChain: destChainId,
+          txHash: bridge.sourceTxHash,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to get attestation');
+      }
+
+      const { signature } = await response.json();
+      
+      // Get NFT contract address for the source chain
+      const nftAddress = bridge.sourceChain === "ETH" ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX;
+      const nftContract = new ethers.Contract(nftAddress, QUANTUM_SIGNATURE_NFT_ABI, signer);
+      
+      // Mint the NFT using bridge data (timestamp already converted to seconds in request)
+      const tx = await nftContract.mintSignature(
+        bridge.messageId,
+        bridge.from,
+        bridge.amountOut,
+        Math.floor(bridge.timestamp / 1000),
+        sourceChainId,
+        destChainId,
+        signature
+      );
+      
+      console.log("Mint tx submitted:", tx.hash);
+      
+      const receipt = await tx.wait();
+      
+      // Extract token ID from event
+      const mintEvent = receipt.logs.find((log: any) => {
+        try {
+          const parsed = nftContract.interface.parseLog(log);
+          return parsed?.name === 'QuantumSignatureMinted';
+        } catch {
+          return false;
+        }
+      });
+      
+      let tokenId = "0";
+      if (mintEvent) {
+        const parsed = nftContract.interface.parseLog(mintEvent);
+        tokenId = parsed?.args?.tokenId?.toString() || "0";
+      }
+      
+      setMintedNFTs(prev => ({ ...prev, [bridge.messageId]: tokenId }));
+      
+      const openseaUrl = getOpenSeaUrl(sourceChainId, nftAddress, tokenId);
+      
+      toast({
+        title: "NFT Minted!",
+        description: (
+          <div className="flex flex-col gap-2">
+            <p>Your Quantum Signature NFT has been minted!</p>
+            <a 
+              href={openseaUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-purple-400 hover:underline flex items-center gap-1"
+            >
+              View on OpenSea <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        ),
+      });
+      
+    } catch (error: any) {
+      console.error("Mint error:", error);
+      toast({
+        title: "Mint Failed",
+        description: error.message || "Transaction rejected.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsMinting(null);
     }
   };
 
@@ -689,25 +805,66 @@ export default function Bridge() {
                         </div>
                       )}
 
-                      <Button
-                        size="sm"
-                        className="w-full bg-primary text-background font-bold font-space hover:bg-primary/90 min-h-[44px] text-sm sm:text-base"
-                        onClick={() => handleClaim(bridge)}
-                        disabled={isClaimingThis}
-                        data-testid={`button-claim-${bridge.messageId}`}
-                      >
-                        {isClaimingThis ? (
-                          <div className="flex items-center gap-2">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Claiming...
-                          </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          className="flex-1 bg-primary text-background font-bold font-space hover:bg-primary/90 min-h-[44px] text-sm sm:text-base"
+                          onClick={() => handleClaim(bridge)}
+                          disabled={isClaimingThis}
+                          data-testid={`button-claim-${bridge.messageId}`}
+                        >
+                          {isClaimingThis ? (
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Claiming...
+                            </div>
+                          ) : (
+                            <span className="hidden sm:inline">Claim on {NETWORKS[bridge.destChain].name}</span>
+                          )}
+                          {!isClaimingThis && (
+                            <span className="inline sm:hidden">Claim</span>
+                          )}
+                        </Button>
+
+                        {mintedNFTs[bridge.messageId] ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 min-h-[44px] text-sm sm:text-base"
+                            onClick={() => {
+                              const sourceChainId = bridge.sourceChain === "ETH" ? 1 : 47763;
+                              const nftAddress = bridge.sourceChain === "ETH" ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX;
+                              const url = getOpenSeaUrl(sourceChainId, nftAddress, mintedNFTs[bridge.messageId]);
+                              window.open(url, '_blank');
+                            }}
+                            data-testid={`button-view-nft-${bridge.messageId}`}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            View NFT
+                          </Button>
                         ) : (
-                          <span className="hidden sm:inline">Claim on {NETWORKS[bridge.destChain].name}</span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 min-h-[44px] text-sm sm:text-base"
+                            onClick={() => handleMintNFT(bridge)}
+                            disabled={isMinting === bridge.messageId}
+                            data-testid={`button-mint-nft-${bridge.messageId}`}
+                          >
+                            {isMinting === bridge.messageId ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Minting...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                Mint NFT
+                              </>
+                            )}
+                          </Button>
                         )}
-                        {!isClaimingThis && (
-                          <span className="inline sm:hidden">Claim</span>
-                        )}
-                      </Button>
+                      </div>
                     </div>
                   );
                 })}

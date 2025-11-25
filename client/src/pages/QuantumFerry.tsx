@@ -210,38 +210,40 @@ const QuantumArtModal = memo(({ txHash, onClose }: { txHash: string; onClose: ()
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-8"
+      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm overflow-y-auto p-8"
       onClick={onClose}
       data-testid="modal-art-detail"
     >
-      <motion.div
-        initial={{ scale: 0.8 }}
-        animate={{ scale: 1 }}
-        exit={{ scale: 0.8 }}
-        className="max-w-4xl w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Card className="bg-black border-purple-500/50">
-          <CardContent className="p-8">
-            {artUrl ? (
-              <img
-                src={artUrl}
-                alt="Quantum signature detail"
-                className="w-full rounded-lg mb-4"
-              />
-            ) : (
-              <div className="w-full aspect-square bg-gray-900 rounded-lg mb-4 flex items-center justify-center">
-                <Sparkles className="w-16 h-16 text-gray-700 animate-pulse" />
+      <div className="min-h-screen flex items-center justify-center">
+        <motion.div
+          initial={{ scale: 0.8 }}
+          animate={{ scale: 1 }}
+          exit={{ scale: 0.8 }}
+          className="max-w-4xl w-full my-8"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Card className="bg-black border-purple-500/50">
+            <CardContent className="p-8">
+              {artUrl ? (
+                <img
+                  src={artUrl}
+                  alt="Quantum signature detail"
+                  className="w-full rounded-lg mb-4"
+                />
+              ) : (
+                <div className="w-full aspect-square bg-gray-900 rounded-lg mb-4 flex items-center justify-center">
+                  <Sparkles className="w-16 h-16 text-gray-700 animate-pulse" />
+                </div>
+              )}
+              <div className="text-center">
+                <p className="text-sm text-gray-400 font-mono">
+                  Transaction: {txHash}
+                </p>
               </div>
-            )}
-            <div className="text-center">
-              <p className="text-sm text-gray-400 font-mono">
-                Transaction: {txHash}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
     </motion.div>
   );
 });
