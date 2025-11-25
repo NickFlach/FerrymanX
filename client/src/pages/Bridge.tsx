@@ -260,9 +260,9 @@ export default function Bridge() {
         .find((parsed: any) => parsed?.name === "BridgeOutRequested");
 
       if (event) {
-        const { from, toOnOtherChain, amountIn, amountOut, nonce } = event.args;
+        const { from, toOnOtherChain, amountIn, amountOut, pforkFeePaid, nonce } = event.args;
         
-        // Compute messageId
+        // Compute messageId using actual fee paid (from event, not the nativeFee variable)
         const srcChainId = NETWORKS[sourceNetwork].chainId;
         const dstChainId = NETWORKS[destNetwork].chainId;
         const messageId = computeMessageId(
@@ -274,7 +274,7 @@ export default function Bridge() {
           toOnOtherChain,
           amountIn.toString(),
           amountOut.toString(),
-          nativeFee
+          pforkFeePaid.toString()
         );
 
         // Save to localStorage
