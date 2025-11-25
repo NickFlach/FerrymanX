@@ -17,8 +17,10 @@ import { ethers } from "ethers";
 import { 
   computeMessageId, 
   saveBridge, 
-  getPendingBridges, 
+  getPendingBridges,
+  getBridges, 
   markBridgeAsClaimed,
+  markBridgeAsNFTMinted,
   type PendingBridge 
 } from "@/lib/bridgeStorage";
 import { WalletModal } from "@/components/WalletModal";
@@ -42,7 +44,6 @@ export default function Bridge() {
   const [isClaiming, setIsClaiming] = useState<string | null>(null);
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [isMinting, setIsMinting] = useState<string | null>(null);
-  const [mintedNFTs, setMintedNFTs] = useState<Record<string, string>>({});
 
   // Determine current network context based on direction
   const sourceNetwork: NetworkType = direction === "eth-neox" ? "ETH" : "NEOX";
@@ -93,18 +94,58 @@ export default function Bridge() {
     return () => clearInterval(interval);
   }, [account, provider, chainId, isWrongNetwork, pforkAddress, ferryAddress]);
 
-  // Load pending bridges on mount and when account changes
+  // Load ALL bridges and verify NFT mint status from contract
   useEffect(() => {
     if (!account) {
       setPendingBridges([]);
       return;
     }
     
-    const bridges = getPendingBridges().filter(
-      (b) => b.from.toLowerCase() === account.toLowerCase()
-    );
-    setPendingBridges(bridges);
-  }, [account]);
+    const loadAndVerifyBridges = async () => {
+      // Get all bridges for this account, sorted by most recent first, limit to 20
+      const allBridges = getBridges()
+        .filter((b) => b.from.toLowerCase() === account.toLowerCase())
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 20);
+      
+      // Set initial state
+      setPendingBridges(allBridges);
+      
+      // Verify NFT mint status for bridges without mintedTokenId
+      const bridgesToVerify = allBridges.filter(b => !b.mintedTokenId);
+      
+      for (const bridge of bridgesToVerify) {
+        try {
+          const sourceChainProvider = bridge.sourceChain === "ETH" ? ethProvider : neoxProvider;
+          const nftAddress = bridge.sourceChain === "ETH" ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX;
+          const nftContract = new ethers.Contract(nftAddress, QUANTUM_SIGNATURE_NFT_ABI, sourceChainProvider);
+          
+          // Check if NFT was minted for this messageId
+          const isMinted = await nftContract.minted(bridge.messageId);
+          
+          if (isMinted) {
+            // Get the token ID
+            const tokenId = await nftContract.messageIdToTokenId(bridge.messageId);
+            // Persist to localStorage
+            markBridgeAsNFTMinted(bridge.messageId, tokenId.toString());
+          }
+        } catch (error) {
+          console.error(`Error checking NFT status for ${bridge.messageId}:`, error);
+        }
+      }
+      
+      // Reload bridges after verification
+      if (bridgesToVerify.length > 0) {
+        const updatedBridges = getBridges()
+          .filter((b) => b.from.toLowerCase() === account.toLowerCase())
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 20);
+        setPendingBridges(updatedBridges);
+      }
+    };
+    
+    loadAndVerifyBridges();
+  }, [account, ethProvider, neoxProvider]);
 
   // Status check: Periodically check if pending bridges have been claimed
   useEffect(() => {
@@ -124,10 +165,11 @@ export default function Bridge() {
           
           if (isProcessed && bridge.status === "pending") {
             markBridgeAsClaimed(bridge.messageId, "auto-detected");
-            // Refresh pending bridges list
-            const updatedBridges = getPendingBridges().filter(
-              (b) => b.from.toLowerCase() === account?.toLowerCase()
-            );
+            // Refresh bridge list (all bridges, sorted by most recent)
+            const updatedBridges = getBridges()
+              .filter((b) => b.from.toLowerCase() === account?.toLowerCase())
+              .sort((a, b) => b.timestamp - a.timestamp)
+              .slice(0, 20);
             setPendingBridges(updatedBridges);
           }
         } catch (error) {
@@ -251,10 +293,11 @@ export default function Bridge() {
         
         saveBridge(bridge);
         
-        // Refresh pending bridges list
-        const updatedBridges = getPendingBridges().filter(
-          (b) => b.from.toLowerCase() === account.toLowerCase()
-        );
+        // Refresh bridge list (all bridges, sorted by most recent)
+        const updatedBridges = getBridges()
+          .filter((b) => b.from.toLowerCase() === account.toLowerCase())
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 20);
         setPendingBridges(updatedBridges);
       }
       
@@ -331,10 +374,11 @@ export default function Bridge() {
       // Update bridge status
       markBridgeAsClaimed(bridge.messageId, tx.hash);
       
-      // Refresh pending bridges list
-      const updatedBridges = getPendingBridges().filter(
-        (b) => b.from.toLowerCase() === account.toLowerCase()
-      );
+      // Refresh bridge list (all bridges, sorted by most recent)
+      const updatedBridges = getBridges()
+        .filter((b) => b.from.toLowerCase() === account.toLowerCase())
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 20);
       setPendingBridges(updatedBridges);
       
       toast({
@@ -434,7 +478,15 @@ export default function Bridge() {
         tokenId = parsed?.args?.tokenId?.toString() || "0";
       }
       
-      setMintedNFTs(prev => ({ ...prev, [bridge.messageId]: tokenId }));
+      // Persist minted NFT to localStorage
+      markBridgeAsNFTMinted(bridge.messageId, tokenId);
+      
+      // Refresh bridge list to show updated status
+      const updatedBridges = getBridges()
+        .filter((b) => b.from.toLowerCase() === account.toLowerCase())
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 20);
+      setPendingBridges(updatedBridges);
       
       const openseaUrl = getOpenSeaUrl(sourceChainId, nftAddress, tokenId);
       
@@ -740,7 +792,7 @@ export default function Bridge() {
           </div>
         </motion.div>
 
-        {/* Pending Bridges Section */}
+        {/* Bridge Activity Section */}
         {account && pendingBridges.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -749,12 +801,17 @@ export default function Bridge() {
             className="w-full max-w-lg mt-6 sm:mt-8"
           >
             <div className="glass-panel rounded-2xl p-4 sm:p-6 shadow-2xl backdrop-blur-xl">
-              <div className="flex items-center gap-3 mb-4 sm:mb-6">
-                <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-                <h3 className="text-base sm:text-lg font-cinzel text-gray-300">Pending Claims</h3>
-                <span className="ml-auto text-xs font-space text-gray-500 bg-primary/10 px-2 py-1 rounded">
-                  {pendingBridges.length}
-                </span>
+              <div className="flex flex-col gap-2 mb-4 sm:mb-6">
+                <div className="flex items-center gap-3">
+                  <History className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+                  <h3 className="text-base sm:text-lg font-cinzel text-gray-300">Bridge Activity</h3>
+                  <span className="ml-auto text-xs font-space text-gray-500 bg-primary/10 px-2 py-1 rounded">
+                    {pendingBridges.length}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 font-space">
+                  💡 Mint your NFT anytime on the source chain • Then claim tokens on destination
+                </p>
               </div>
 
               <div className="space-y-3">
@@ -769,10 +826,24 @@ export default function Bridge() {
                       data-testid={`pending-bridge-${bridge.messageId}`}
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-base sm:text-lg font-bold text-white font-space">
                             {parseFloat(ethers.formatUnits(bridge.amountOut, 18)).toFixed(2)} PFORK
                           </span>
+                          {bridge.status === "claimed" ? (
+                            <span className="px-2 py-0.5 bg-green-500/20 border border-green-500/40 rounded text-[9px] text-green-400 font-space">
+                              ✓ Claimed
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 rounded text-[9px] text-amber-400 font-space">
+                              ⏳ Pending
+                            </span>
+                          )}
+                          {bridge.mintedTokenId && (
+                            <span className="px-2 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-[9px] text-purple-400 font-space">
+                              ✨ NFT Minted
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 text-[10px] text-gray-400 font-mono">
                           <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold ${bridge.sourceChain === "ETH" ? "bg-blue-600" : "bg-green-600"}`}>
@@ -799,42 +870,44 @@ export default function Bridge() {
                         </a>
                       </div>
 
-                      {!isOnCorrectNetwork && (
+                      {!isOnCorrectNetwork && bridge.status === "pending" && (
                         <div className="mb-2 px-2 py-1 bg-amber-500/10 border border-amber-500/20 rounded text-[9px] sm:text-[10px] text-amber-400 font-space text-center">
                           Switch to {NETWORKS[bridge.destChain].name} to claim
                         </div>
                       )}
 
                       <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          className="flex-1 bg-primary text-background font-bold font-space hover:bg-primary/90 min-h-[44px] text-sm sm:text-base"
-                          onClick={() => handleClaim(bridge)}
-                          disabled={isClaimingThis}
-                          data-testid={`button-claim-${bridge.messageId}`}
-                        >
-                          {isClaimingThis ? (
-                            <div className="flex items-center gap-2">
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              Claiming...
-                            </div>
-                          ) : (
-                            <span className="hidden sm:inline">Claim on {NETWORKS[bridge.destChain].name}</span>
-                          )}
-                          {!isClaimingThis && (
-                            <span className="inline sm:hidden">Claim</span>
-                          )}
-                        </Button>
+                        {bridge.status === "pending" && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-primary text-background font-bold font-space hover:bg-primary/90 min-h-[44px] text-sm sm:text-base"
+                            onClick={() => handleClaim(bridge)}
+                            disabled={isClaimingThis}
+                            data-testid={`button-claim-${bridge.messageId}`}
+                          >
+                            {isClaimingThis ? (
+                              <div className="flex items-center gap-2">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Claiming...
+                              </div>
+                            ) : (
+                              <span className="hidden sm:inline">Claim on {NETWORKS[bridge.destChain].name}</span>
+                            )}
+                            {!isClaimingThis && (
+                              <span className="inline sm:hidden">Claim</span>
+                            )}
+                          </Button>
+                        )}
 
-                        {mintedNFTs[bridge.messageId] ? (
+                        {bridge.mintedTokenId ? (
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 min-h-[44px] text-sm sm:text-base"
+                            className={`${bridge.status === "pending" ? "flex-1" : "w-full"} border-purple-500/50 text-purple-400 hover:bg-purple-500/10 min-h-[44px] text-sm sm:text-base`}
                             onClick={() => {
                               const sourceChainId = bridge.sourceChain === "ETH" ? 1 : 47763;
                               const nftAddress = bridge.sourceChain === "ETH" ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX;
-                              const url = getOpenSeaUrl(sourceChainId, nftAddress, mintedNFTs[bridge.messageId]);
+                              const url = getOpenSeaUrl(sourceChainId, nftAddress, bridge.mintedTokenId!);
                               window.open(url, '_blank');
                             }}
                             data-testid={`button-view-nft-${bridge.messageId}`}
@@ -846,7 +919,7 @@ export default function Bridge() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1 border-purple-500/50 text-purple-400 hover:bg-purple-500/10 min-h-[44px] text-sm sm:text-base"
+                            className={`${bridge.status === "pending" ? "flex-1" : "w-full"} border-purple-500/50 text-purple-400 hover:bg-purple-500/10 min-h-[44px] text-sm sm:text-base`}
                             onClick={() => handleMintNFT(bridge)}
                             disabled={isMinting === bridge.messageId}
                             data-testid={`button-mint-nft-${bridge.messageId}`}

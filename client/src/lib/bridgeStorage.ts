@@ -14,6 +14,7 @@ export interface PendingBridge {
   timestamp: number;
   status: BridgeStatus;
   claimTxHash?: string;
+  mintedTokenId?: string; // NFT token ID if minted
 }
 
 const STORAGE_KEY = "ferryman_bridge_history";
@@ -72,6 +73,16 @@ export function markBridgeAsClaimed(messageId: string, claimTxHash: string): voi
   if (bridge) {
     bridge.status = "claimed";
     bridge.claimTxHash = claimTxHash;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(bridges));
+  }
+}
+
+export function markBridgeAsNFTMinted(messageId: string, tokenId: string): void {
+  const bridges = getBridges();
+  const bridge = bridges.find((b) => b.messageId === messageId);
+  
+  if (bridge) {
+    bridge.mintedTokenId = tokenId;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(bridges));
   }
 }
