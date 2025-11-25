@@ -8,6 +8,16 @@ import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
+/**
+ * @title QuantumSignatureNFT
+ * @notice On-chain generative NFT receipts for cross-chain bridge events.
+ *
+ * Features:
+ * - True EIP-712 typed message signatures
+ * - User pays a mint fee in ETH to mint their own receipt
+ * - One NFT per messageId (no double-minting)
+ * - Deterministic on-chain SVG art based on messageId
+ */
 contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     using Strings for uint256;
     using Strings for address;
@@ -22,6 +32,7 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         string quantumState;
     }
 
+    /// @dev Typed struct hash for EIP-712 mint requests.
     bytes32 private constant MINT_TYPEHASH =
         keccak256(
             "MintRequest(bytes32 messageId,address bridger,uint256 amount,uint256 timestamp,uint256 sourceChain,uint256 destChain)"
@@ -29,36 +40,54 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
 
     uint256 private _tokenIdCounter;
 
-    address public immutable ferryContract;
+    /// @notice Address whose signatures are accepted for minting.
     address public signer;
 
+    /// @notice Flat mint fee in wei (paid by user).
+    uint256 public mintFee;
+
+    /// @notice Tracks which messageIds have already been minted.
     mapping(bytes32 => bool) public minted;
+
+    /// @notice Mapping from messageId to tokenId.
     mapping(bytes32 => uint256) public messageIdToTokenId;
+
+    /// @notice Metadata for each minted token.
     mapping(uint256 => BridgeMetadata) public tokenMetadata;
 
     event SignerUpdated(address indexed oldSigner, address indexed newSigner);
+    event MintFeeUpdated(uint256 oldFee, uint256 newFee);
     event QuantumSignatureMinted(
         uint256 indexed tokenId,
         bytes32 indexed messageId,
         address indexed bridger,
+        uint256 feePaid,
         string quantumState
     );
 
-    constructor(address _ferryContract)
+    // ------------------------------------------------------------
+    // Constructor
+    // ------------------------------------------------------------
+
+    constructor(address _signer, uint256 _mintFee)
         ERC721("Quantum Signature", "QSIG")
         EIP712("QuantumSignatureNFT", "1")
-        Ownable(msg.sender)   // <-- REQUIRED FOR OZ 5.x
+        Ownable(msg.sender) // OZ 5.x requires initialOwner
     {
-        require(_ferryContract != address(0), "Invalid ferry");
-        ferryContract = _ferryContract;
-        signer = msg.sender;
+        require(_signer != address(0), "Invalid signer");
+        signer = _signer;
+        mintFee = _mintFee;
     }
 
     // ------------------------------------------------------------
-    // OZ 5.x existence helper
+    // Internal existence helper (OZ 5.x, no _exists)
     // ------------------------------------------------------------
+
     function _requireExists(uint256 tokenId) internal view {
-        try this.ownerOf(tokenId) {} catch {
+        // OZ 5.x: use ownerOf in a try/catch for existence check
+        try this.ownerOf(tokenId) {
+            // ok
+        } catch {
             revert("ERC721: invalid token ID");
         }
     }
@@ -66,15 +95,39 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     // ------------------------------------------------------------
     // Admin
     // ------------------------------------------------------------
+
+    /// @notice Update the EIP-712 signer (backend authority).
     function setSigner(address _signer) external onlyOwner {
         require(_signer != address(0), "Invalid signer");
         emit SignerUpdated(signer, _signer);
         signer = _signer;
     }
 
+    /// @notice Update the ETH mint fee.
+    function setMintFee(uint256 _mintFee) external onlyOwner {
+        emit MintFeeUpdated(mintFee, _mintFee);
+        mintFee = _mintFee;
+    }
+
+    /// @notice Withdraw accumulated ETH fees.
+    function withdraw(address payable to, uint256 amount) external onlyOwner {
+        require(to != address(0), "Invalid to");
+        require(amount <= address(this).balance, "Insufficient balance");
+        (bool ok, ) = to.call{value: amount}("");
+        require(ok, "Withdraw failed");
+    }
+
     // ------------------------------------------------------------
-    // Minting
+    // Minting (user pays + signature-verified)
     // ------------------------------------------------------------
+
+    /**
+     * @notice Mint a Quantum Signature NFT for a bridge event.
+     * @dev User must:
+     *  - Provide a valid EIP-712 signature from `signer`.
+     *  - Pay at least `mintFee` in ETH.
+     *  - Be the `bridger` address encoded in the signed payload.
+     */
     function mintSignature(
         bytes32 messageId,
         address bridger,
@@ -83,10 +136,12 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         uint256 sourceChain,
         uint256 destChain,
         bytes calldata signature
-    ) external returns (uint256) {
-        require(msg.sender == ferryContract, "Only ferry contract");
+    ) external payable returns (uint256) {
         require(!minted[messageId], "Already minted");
+        require(bridger == msg.sender, "Only bridger can mint");
+        require(msg.value >= mintFee, "Insufficient mint fee");
 
+        // Build typed struct hash
         bytes32 structHash = keccak256(
             abi.encode(
                 MINT_TYPEHASH,
@@ -99,11 +154,16 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
             )
         );
 
+        // Compute EIP-712 digest
         bytes32 digest = _hashTypedDataV4(structHash);
+
+        // Recover signer and verify
         require(ECDSA.recover(digest, signature) == signer, "Invalid signature");
 
+        // Mark messageId as minted
         minted[messageId] = true;
 
+        // Mint token
         uint256 tokenId = _tokenIdCounter++;
         messageIdToTokenId[messageId] = tokenId;
 
@@ -121,13 +181,24 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
 
         _safeMint(bridger, tokenId);
 
-        emit QuantumSignatureMinted(tokenId, messageId, bridger, quantumState);
+        emit QuantumSignatureMinted(
+            tokenId,
+            messageId,
+            bridger,
+            mintFee,
+            quantumState
+        );
+
+        // Any excess ETH stays in the contract as additional protocol revenue.
+        // If you prefer to refund excess, we can add that.
+
         return tokenId;
     }
 
     // ------------------------------------------------------------
     // Quantum State
     // ------------------------------------------------------------
+
     function _computeQuantumState(bytes32 messageId)
         internal
         pure
@@ -142,6 +213,7 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     // ------------------------------------------------------------
     // SVG Generation
     // ------------------------------------------------------------
+
     function generateSVG(uint256 tokenId) public view returns (string memory) {
         _requireExists(tokenId);
 
@@ -255,8 +327,9 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     }
 
     // ------------------------------------------------------------
-    // Token URI
+    // Metadata
     // ------------------------------------------------------------
+
     function tokenURI(uint256 tokenId)
         public
         view
@@ -299,9 +372,6 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         return string(abi.encodePacked("data:application/json;base64,", json));
     }
 
-    // ------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------
     function _chainName(uint256 id) internal pure returns (string memory) {
         if (id == 1) return "Ethereum";
         if (id == 8453) return "Base";
@@ -324,4 +394,7 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     function totalSupply() public view returns (uint256) {
         return _tokenIdCounter;
     }
+
+    // Accept ETH directly (if someone sends by accident)
+    receive() external payable {}
 }

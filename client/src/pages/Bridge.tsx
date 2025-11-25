@@ -448,6 +448,9 @@ export default function Bridge() {
       const nftAddress = bridge.sourceChain === "ETH" ? NFT_CONTRACTS.ETH : NFT_CONTRACTS.NEOX;
       const nftContract = new ethers.Contract(nftAddress, QUANTUM_SIGNATURE_NFT_ABI, signer);
       
+      // Get the mint fee from the contract
+      const mintFee = await nftContract.mintFee();
+      
       // Mint the NFT using bridge data (timestamp already converted to seconds in request)
       const tx = await nftContract.mintSignature(
         bridge.messageId,
@@ -456,7 +459,8 @@ export default function Bridge() {
         Math.floor(bridge.timestamp / 1000),
         sourceChainId,
         destChainId,
-        signature
+        signature,
+        { value: mintFee }
       );
       
       console.log("Mint tx submitted:", tx.hash);

@@ -40,8 +40,8 @@ Preferred communication style: Simple, everyday language.
 **Contract ABIs**: Minimal ABIs for Ferry and ERC20 contracts.
 **Ferry Contract Methods**: `bridgeOut` (user), `fulfillBridgeIn` (relayer), `nativeFeeWei`, `feeBps`.
 **Event Monitoring**: Relayer listens for `BridgeOutRequested` events.
-**QuantumSignatureNFT Contract**: ERC-721 compliant, with on-chain SVG generation, signature-based attestation, and replay protection.
-**Design Rationale**: Separate Ferry contracts for independent upgrades; upfront fee model simplifies relayer economics. NFT contracts use secure OpenZeppelin libraries for verification.
+**QuantumSignatureNFT Contract**: ERC-721 compliant, with on-chain SVG generation, signature-based attestation, and replay protection. Users pay a small mint fee (in native currency) when minting NFTs, collected by the contract owner. The Ferry contract restriction has been removed—anyone with a valid backend signature can mint.
+**Design Rationale**: Separate Ferry contracts for independent upgrades; upfront fee model simplifies relayer economics. NFT contracts use secure OpenZeppelin libraries for verification. Mint fee provides sustainable revenue for operations.
 
 ### UI/UX Decisions
 
@@ -54,11 +54,11 @@ Preferred communication style: Simple, everyday language.
 - **Ethereum Mainnet**: RPC: `https://eth.llamarpc.com`
   - Ferry Contract: `0xDE7cF1Dd14b613db5A4727A59ad1Cc1ba6f47a86`
   - PFORK Token: `0x536d98Ad83F7d0230B9384e606208802ECD728FE`
-  - QuantumSignatureNFT Contract: `0x21A95E8b28C56cC97b22f3C85121B81F2a8074D1`
+  - QuantumSignatureNFT Contract: `0x40eA38a86F7a67C03F9EF30e6c96097a373A5FbE`
 - **Neo X Mainnet**: RPC: `https://mainnet-2.rpc.banelabs.org`
   - Ferry Contract: `0x81aC8AEDdaC85aA14011ab88944aA147472aC525`
   - PFORK Token: `0x216490C8E6b33b4d8A2390dADcf9f433E30da60F`
-  - QuantumSignatureNFT Contract: `0x34446F7a2Ac26B1d789279d1bE5D2Cd66C28D27E`
+  - QuantumSignatureNFT Contract: `0x5bf7926Ed124a25997eDAd4fC3Da443cd14D63D8`
 
 ### Database
 - **Neon Postgres**: Serverless PostgreSQL via `@neondatabase/serverless`.
