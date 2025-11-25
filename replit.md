@@ -98,6 +98,9 @@ Preferred communication style: Simple, everyday language.
 - `RELAYER_PRIVATE_KEY`: Private key for relayer wallet (required for automated bridging)
 - `ETH_RPC_URL`: Custom Ethereum RPC endpoint (optional, defaults to public endpoint)
 - `NEOX_RPC_URL`: Custom Neo X RPC endpoint (optional, defaults to public endpoint)
+- `ETH_NFT_CONTRACT`: Ethereum NFT contract address (0x21A95E8b28C56cC97b22f3C85121B81F2a8074D1)
+- `NEOX_NFT_CONTRACT`: Neo X NFT contract address (0x34446F7a2Ac26B1d789279d1bE5D2Cd66C28D27E)
+- `NFT_SIGNER_PRIVATE_KEY`: Private key for NFT attestation signing (stored in secrets)
 
 ### Web3 Provider
 - **User Wallets**: MetaMask or other EIP-1193 compatible wallets via `window.ethereum`
@@ -194,3 +197,26 @@ Implemented complete on-chain NFT minting system with real blockchain verificati
 - Shows marketplace links after successful minting
 
 **Result**: NFTs can ONLY be minted for real bridges with FULLY validated on-chain data. The backend cryptographically verifies ALL metadata (messageId, amount, timestamp, destChain) against blockchain state before signing. No forging, no metadata manipulation, no replay attacks, no unlimited farming. Each bridge transaction can mint exactly ONE NFT with guaranteed authentic data.
+
+### Deployed NFT Contracts (November 25, 2025)
+
+**QuantumSignatureNFT** - ERC-721 NFTs with on-chain generative art representing bridge transactions.
+
+**Ethereum Mainnet:**
+- Contract: `0x21A95E8b28C56cC97b22f3C85121B81F2a8074D1`
+- Ferry Contract: `0xDE7cF1Dd14b613db5A4727A59ad1Cc1ba6f47a86`
+- Network: Ethereum (Chain ID: 1)
+
+**Neo X Mainnet:**
+- Contract: `0x34446F7a2Ac26B1d789279d1bE5D2Cd66C28D27E`
+- Ferry Contract: `0x81aC8AEDdaC85aA14011ab88944aA147472aC525`
+- Network: Neo X (Chain ID: 47763)
+
+**Features:**
+- EIP-712 typed signatures for secure attestation
+- Separate signer role (backend key) from contract owner (deployer key)
+- On-chain SVG generation with deterministic generative art
+- Quantum state computation based on transaction hash
+- Metadata includes: messageId, bridger, amount, timestamp, source/dest chains
+- Prevents double-minting via messageId mapping
+- Full blockchain verification before signature issuance

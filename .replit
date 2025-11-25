@@ -14,6 +14,10 @@ run = ["npm", "run", "start"]
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 40697
+externalPort = 3000
+
 [env]
 PORT = "5000"
 
@@ -48,3 +52,4 @@ ETH_RPC_URL = "https://eth.llamarpc.com"
 NEOX_RPC_URL = "https://mainnet-2.rpc.banelabs.org"
 VITE_WALLETCONNECT_PROJECT_ID = "8c13ea3951ef07633f98b5ccf459f91d"
 NEOX_NFT_CONTRACT = "0x34446F7a2Ac26B1d789279d1bE5D2Cd66C28D27E"
+ETH_NFT_CONTRACT = "0x21A95E8b28C56cC97b22f3C85121B81F2a8074D1"
