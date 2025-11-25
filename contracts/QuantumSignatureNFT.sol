@@ -78,7 +78,7 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     // Minting
     // ------------------------------------------------------------
     /**
-     * @dev Mint an NFT for a verified bridge tx from Ferry contract.
+     * @dev Mint an NFT for a verified bridge tx with backend signature.
      * @param signature EIP712 signature by authorized backend signer
      */
     function mintSignature(
@@ -90,7 +90,6 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         uint256 destChain,
         bytes calldata signature
     ) external returns (uint256) {
-        require(msg.sender == ferryContract, "Only ferry contract");
         require(!minted[messageId], "Already minted");
 
         // Construct typed mint request
