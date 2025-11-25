@@ -176,14 +176,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const wallet = new ethers.Wallet(process.env.NFT_SIGNER_PRIVATE_KEY);
       
-      const messageHash = ethers.keccak256(
-        ethers.solidityPacked(
-          ["bytes32", "address", "uint256", "uint256", "uint8", "uint8", "address"],
-          [messageId, bridger, amount, timestamp, sourceChain, destChain, nftContractAddress]
-        )
-      );
+      // EIP-712 domain matching the NFT contract
+      const domain = {
+        name: "QuantumSignatureNFT",
+        version: "1",
+        chainId: sourceChain,
+        verifyingContract: nftContractAddress
+      };
       
-      const signature = await wallet.signMessage(ethers.getBytes(messageHash));
+      // EIP-712 types matching the NFT contract
+      const types = {
+        MintRequest: [
+          { name: "messageId", type: "bytes32" },
+          { name: "bridger", type: "address" },
+          { name: "amount", type: "uint256" },
+          { name: "timestamp", type: "uint256" },
+          { name: "sourceChain", type: "uint256" },
+          { name: "destChain", type: "uint256" }
+        ]
+      };
+      
+      // The message to sign
+      const message = {
+        messageId,
+        bridger,
+        amount,
+        timestamp,
+        sourceChain,
+        destChain
+      };
+      
+      // Sign using EIP-712 typed data
+      const signature = await wallet.signTypedData(domain, types, message);
       
       await storage.recordNftTransactionSigned({
         txHash: txHash.toLowerCase(),
