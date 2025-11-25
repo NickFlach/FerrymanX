@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ArrowRight, Anchor, Volume2, VolumeX } from "lucide-react";
+import { ArrowRight, Anchor, Volume2, VolumeX, Sparkles } from "lucide-react";
 // @ts-ignore
 import ferryVideo from "@assets/generated_videos/mystical_ferryman_rowing_ninjas_across_a_moonlit_river.mp4";
 // @ts-ignore
@@ -86,18 +86,35 @@ export default function Landing() {
             <span className="text-primary/80">Ethereum</span> ⇋ <span className="text-green-400">Neo X</span>
           </p>
 
-          <motion.button
-            whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(6, 182, 212, 0.5)" }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setLocation("/bridge")}
-            className="mt-12 group relative inline-flex items-center gap-3 px-8 py-4 bg-primary/10 backdrop-blur-md border border-primary/50 hover:bg-primary/20 text-primary hover:text-white rounded-none transition-all duration-300 uppercase font-cinzel font-bold tracking-widest"
-          >
-            <span>Enter the Ferry</span>
-            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            
-            {/* Border Glow Effect */}
-            <div className="absolute inset-0 rounded-none border border-primary/0 group-hover:border-primary/50 transition-colors duration-500" />
-          </motion.button>
+          <div className="mt-12 flex flex-col sm:flex-row gap-4 items-center justify-center">
+            <motion.button
+              whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(6, 182, 212, 0.5)" }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setLocation("/bridge")}
+              className="group relative inline-flex items-center gap-3 px-8 py-4 bg-primary/10 backdrop-blur-md border border-primary/50 hover:bg-primary/20 text-primary hover:text-white rounded-none transition-all duration-300 uppercase font-cinzel font-bold tracking-widest"
+              data-testid="button-enter-ferry"
+            >
+              <span>Enter the Ferry</span>
+              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              
+              {/* Border Glow Effect */}
+              <div className="absolute inset-0 rounded-none border border-primary/0 group-hover:border-primary/50 transition-colors duration-500" />
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(168, 85, 247, 0.5)" }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setLocation("/quantum")}
+              className="group relative inline-flex items-center gap-3 px-8 py-4 bg-purple-500/10 backdrop-blur-md border border-purple-500/50 hover:bg-purple-500/20 text-purple-400 hover:text-white rounded-none transition-all duration-300 uppercase font-cinzel font-bold tracking-widest"
+              data-testid="button-quantum-ferry"
+            >
+              <span>Quantum View</span>
+              <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+              
+              {/* Border Glow Effect */}
+              <div className="absolute inset-0 rounded-none border border-purple-500/0 group-hover:border-purple-500/50 transition-colors duration-500" />
+            </motion.button>
+          </div>
         </motion.div>
 
         <motion.div 
