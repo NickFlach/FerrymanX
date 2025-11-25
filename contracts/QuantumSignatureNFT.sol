@@ -8,16 +8,6 @@ import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
-/**
- * @title QuantumSignatureNFT
- * @notice Cross-chain bridge receipts as fully on-chain generative NFTs.
- *
- * Features:
- * - True EIP-712 typed signatures (secure & replay-protected)
- * - Ferry contract restricted (only bridge pipeline can mint)
- * - Dynamic chain name resolution for metadata
- * - Deterministic generative SVG based on messageId
- */
 contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     using Strings for uint256;
     using Strings for address;
@@ -32,7 +22,6 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         string quantumState;
     }
 
-    /// @dev Typed struct hash for EIP-712 signatures
     bytes32 private constant MINT_TYPEHASH =
         keccak256(
             "MintRequest(bytes32 messageId,address bridger,uint256 amount,uint256 timestamp,uint256 sourceChain,uint256 destChain)"
@@ -58,11 +47,20 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     constructor(address _ferryContract)
         ERC721("Quantum Signature", "QSIG")
         EIP712("QuantumSignatureNFT", "1")
-        Ownable(msg.sender)
+        Ownable(msg.sender)   // <-- REQUIRED FOR OZ 5.x
     {
         require(_ferryContract != address(0), "Invalid ferry");
         ferryContract = _ferryContract;
         signer = msg.sender;
+    }
+
+    // ------------------------------------------------------------
+    // OZ 5.x existence helper
+    // ------------------------------------------------------------
+    function _requireExists(uint256 tokenId) internal view {
+        try this.ownerOf(tokenId) {} catch {
+            revert("ERC721: invalid token ID");
+        }
     }
 
     // ------------------------------------------------------------
@@ -77,10 +75,6 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     // ------------------------------------------------------------
     // Minting
     // ------------------------------------------------------------
-    /**
-     * @dev Mint an NFT for a verified bridge tx with backend signature.
-     * @param signature EIP712 signature by authorized backend signer
-     */
     function mintSignature(
         bytes32 messageId,
         address bridger,
@@ -90,9 +84,9 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         uint256 destChain,
         bytes calldata signature
     ) external returns (uint256) {
+        require(msg.sender == ferryContract, "Only ferry contract");
         require(!minted[messageId], "Already minted");
 
-        // Construct typed mint request
         bytes32 structHash = keccak256(
             abi.encode(
                 MINT_TYPEHASH,
@@ -106,9 +100,7 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         );
 
         bytes32 digest = _hashTypedDataV4(structHash);
-
-        address recovered = ECDSA.recover(digest, signature);
-        require(recovered == signer, "Invalid signature");
+        require(ECDSA.recover(digest, signature) == signer, "Invalid signature");
 
         minted[messageId] = true;
 
@@ -129,18 +121,12 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
 
         _safeMint(bridger, tokenId);
 
-        emit QuantumSignatureMinted(
-            tokenId,
-            messageId,
-            bridger,
-            quantumState
-        );
-
+        emit QuantumSignatureMinted(tokenId, messageId, bridger, quantumState);
         return tokenId;
     }
 
     // ------------------------------------------------------------
-    // Deterministic Quantum State
+    // Quantum State
     // ------------------------------------------------------------
     function _computeQuantumState(bytes32 messageId)
         internal
@@ -154,10 +140,10 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
     }
 
     // ------------------------------------------------------------
-    // SVG Art
+    // SVG Generation
     // ------------------------------------------------------------
     function generateSVG(uint256 tokenId) public view returns (string memory) {
-        require(_exists(tokenId), "Nonexistent token");
+        _requireExists(tokenId);
 
         BridgeMetadata memory meta = tokenMetadata[tokenId];
 
@@ -179,9 +165,9 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
                 shapes,
                 '<text x="10" y="380" fill="',
                 color,
-                '" font-family="monospace" font-size="12">',
+                '" font-size="12" font-family="monospace">',
                 meta.quantumState,
-                '</text>',
+                "</text>",
                 "</svg>"
             )
         );
@@ -192,20 +178,18 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         pure
         returns (string memory)
     {
-        string memory output = "";
-        uint256 numShapes = (seed % 15) + 10;
+        string memory out = "";
+        uint256 n = (seed % 15) + 10;
 
-        for (uint256 i = 0; i < numShapes; i++) {
+        for (uint256 i = 0; i < n; i++) {
             seed = uint256(keccak256(abi.encodePacked(seed, i)));
-            output = string(
-                abi.encodePacked(output, _generateSingleShape(seed, color))
-            );
+            out = string(abi.encodePacked(out, _generateSingle(seed, color)));
         }
 
-        return output;
+        return out;
     }
 
-    function _generateSingleShape(uint256 seed, string memory color)
+    function _generateSingle(uint256 seed, string memory color)
         internal
         pure
         returns (string memory)
@@ -214,11 +198,9 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         uint256 y = ((seed >> 8) % 350) + 25;
         uint256 size = ((seed >> 16) % 60) + 20;
         uint256 op = ((seed >> 24) % 60) + 20;
-        uint256 shape = seed % 3;
+        string memory opacity = string(abi.encodePacked("0.", op.toString()));
 
-        string memory opacity = string(
-            abi.encodePacked("0.", op.toString())
-        );
+        uint256 shape = seed % 3;
 
         if (shape == 0) {
             return string(
@@ -263,22 +245,11 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         return string(
             abi.encodePacked(
                 '<polygon points="',
-                x.toString(),
-                ",",
-                (y - o).toString(),
-                " ",
-                (x + o).toString(),
-                ",",
-                (y + o).toString(),
-                " ",
-                (x - o).toString(),
-                ",",
-                (y + o).toString(),
-                '" fill="',
-                color,
-                '" opacity="',
-                opacity,
-                '"/>'
+                x.toString(), ",", (y - o).toString(), " ",
+                (x + o).toString(), ",", (y + o).toString(), " ",
+                (x - o).toString(), ",", (y + o).toString(),
+                '" fill="', color,
+                '" opacity="', opacity, '"/>'
             )
         );
     }
@@ -292,7 +263,7 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
         override
         returns (string memory)
     {
-        require(_exists(tokenId), "Nonexistent token");
+        _requireExists(tokenId);
 
         BridgeMetadata memory meta = tokenMetadata[tokenId];
         string memory svg = generateSVG(tokenId);
@@ -303,7 +274,7 @@ contract QuantumSignatureNFT is ERC721, EIP712, Ownable {
                     abi.encodePacked(
                         '{"name":"Quantum Signature #',
                         tokenId.toString(),
-                        '", "description":"Cross-chain quantum receipt NFT",',
+                        '","description":"Cross-chain quantum receipt NFT",',
                         '"attributes":[',
                         '{"trait_type":"Quantum State","value":"',
                         meta.quantumState,
