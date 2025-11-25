@@ -68,6 +68,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const provider = sourceChain === 1 ? ethProvider : neoxProvider;
       const ferryAddress = sourceChain === 1 ? FERRY_CONTRACTS.ETH : FERRY_CONTRACTS.NEOX;
       
+      let validatedLogIndex = -1;
+      
       try {
         const receipt = await provider.getTransactionReceipt(txHash);
         
@@ -107,7 +109,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         let validatedEvent = null;
-        let validatedLogIndex = -1;
         for (const logEntry of logs) {
           try {
             const parsed = ferryContract.interface.parseLog({
