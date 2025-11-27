@@ -120,20 +120,22 @@ contract QBridgeVault is IQBridgeVault, Ownable, ReentrancyGuard {
 
     function requestExit(
         address asset,
-        uint256 amount
+        uint256 amount,
+        uint256 depositIndex
     ) external nonReentrant returns (uint256 exitId) {
         require(amount > 0, "Cannot exit zero");
-        require(_deposits[msg.sender][asset] >= amount, "Insufficient deposit balance");
+        
+        DepositRecord[] storage deposits = _depositRecords[msg.sender][asset];
+        require(depositIndex < deposits.length, "Invalid deposit index");
+        
+        DepositRecord storage record = deposits[depositIndex];
+        require(record.active, "Deposit already used");
+        require(record.amount == amount, "Must withdraw full deposit amount");
+        
+        record.active = false;
+        _deposits[msg.sender][asset] -= amount;
         
         exitId = _exitIdCounter++;
-        
-        bytes32 depositCommitment = keccak256(abi.encodePacked(
-            msg.sender,
-            asset,
-            amount,
-            exitId,
-            block.number
-        ));
         
         _exitRequests[exitId] = ExitRequest({
             user: msg.sender,
@@ -141,12 +143,11 @@ contract QBridgeVault is IQBridgeVault, Ownable, ReentrancyGuard {
             amount: amount,
             requestBlock: block.number,
             unlockBlock: block.number + exitDelay,
-            depositCommitment: depositCommitment,
+            depositCommitment: record.commitment,
             completed: false,
             isPriority: false
         });
         
-        _deposits[msg.sender][asset] -= amount;
         _userExits[msg.sender].push(exitId);
         
         emit ExitRequested(msg.sender, asset, amount, exitId);
@@ -214,16 +215,17 @@ contract QBridgeVault is IQBridgeVault, Ownable, ReentrancyGuard {
     ) internal returns (bool) {
         ExitRequest storage request = _exitRequests[exitId];
         
+        require(request.depositCommitment != bytes32(0), "No deposit commitment");
+        require(!_usedCommitments[request.depositCommitment], "Commitment already used");
+        
         bytes32 leaf = keccak256(abi.encodePacked(
             request.user,
             request.asset,
             request.amount,
             exitId,
-            request.depositCommitment,
-            leafData
+            request.depositCommitment
         ));
         
-        require(!_usedCommitments[request.depositCommitment], "Commitment already used");
         require(proof.length > 0, "Proof required");
         
         (bytes32[] memory proofHashes, uint256 index) = abi.decode(proof, (bytes32[], uint256));
@@ -237,6 +239,25 @@ contract QBridgeVault is IQBridgeVault, Ownable, ReentrancyGuard {
         }
         
         return valid;
+    }
+
+    function getDepositRecords(
+        address user,
+        address asset
+    ) external view returns (DepositRecord[] memory) {
+        return _depositRecords[user][asset];
+    }
+
+    function getActiveDepositCount(
+        address user,
+        address asset
+    ) external view returns (uint256 count) {
+        DepositRecord[] storage deposits = _depositRecords[user][asset];
+        for (uint256 i = 0; i < deposits.length; i++) {
+            if (deposits[i].active) {
+                count++;
+            }
+        }
     }
 
     function _transferAsset(address asset, address to, uint256 amount) internal {
