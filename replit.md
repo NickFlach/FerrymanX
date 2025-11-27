@@ -69,3 +69,62 @@ Preferred communication style: Simple, everyday language.
 ### Web3 Provider
 - **User Wallets**: MetaMask or other EIP-1193 compatible wallets.
 - **Relayer**: Direct RPC connections using ethers.js providers.
+
+## Quantum Integration Layer (QIL)
+
+The Quantum Integration Layer is a rollup-style system with PFORK as the central economic token. It enables high-frequency, quantum-optimized transactions while settling to Neo X for finality.
+
+### QIL Smart Contracts (Neo X)
+
+| Contract | Purpose | PFORK Role |
+|----------|---------|------------|
+| **QSequencerBondVault** | Manages sequencer staking | Stake PFORK to become sequencer |
+| **QPriorityFeeManager** | Priority fees for batch ordering | Pay PFORK for faster processing |
+| **QStateVerifier** | Stores state roots, verifies proofs | N/A (settlement layer) |
+| **QBridgeVault** | Deposits/exits for Q-layer | Deposit assets, priority exits |
+| **QGovernance** | PFORK-based voting | Vote on protocol parameters |
+| **QDAIncentives** | Rewards for DA/prover nodes | Earn PFORK for services |
+| **QIdentityRegistry** | PQ public key mapping | Bond PFORK to register identity |
+
+### QIL Architecture
+
+```
+Users → QBridgeVault (deposit) → Q-Layer (off-chain) → QStateVerifier (settle)
+                ↓                        ↓
+         PFORK locked            Quantum algorithms
+                                 (optimization, routing)
+                                        ↓
+                                 Batch + ZK Proof
+                                        ↓
+                              Neo X (finality via dBFT)
+```
+
+### Contract Locations
+
+- **Interfaces**: `contracts/interfaces/IQuantumLayer.sol`
+- **Implementations**: `contracts/quantum/*.sol`
+- **Deployment Script**: `scripts/deploy-quantum-layer.cjs`
+- **Architecture Guide**: `contracts/QUANTUM_LAYER_GUIDE.md`
+- **Frontend ABIs**: `client/src/lib/quantumContracts.ts`
+
+### Key Parameters (Defaults)
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `minBondAmount` | 10,000 PFORK | Minimum sequencer stake |
+| `unstakeDelay` | 7 days | Delay before unstake available |
+| `basePricePerUnit` | 100 PFORK | Cost per priority unit |
+| `burnRateBps` | 10% | PFORK burned on priority purchase |
+| `challengeWindow` | 1 hour | Time for fraud proofs |
+| `proposalThreshold` | 100,000 PFORK | Required to create governance proposal |
+| `identityBondAmount` | 1,000 PFORK | PQ identity registration bond |
+
+### Deployment
+
+```bash
+# Set deployer private key
+export DEPLOYER_PRIVATE_KEY="your_key"
+
+# Deploy all contracts
+npx hardhat run scripts/deploy-quantum-layer.cjs --network neox
+```
