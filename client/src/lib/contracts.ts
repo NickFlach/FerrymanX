@@ -4,7 +4,7 @@ export const NETWORKS = {
   ETH: {
     chainId: 1,
     name: "Ethereum",
-    rpc: "https://eth.llamarpc.com",
+    rpc: "https://ethereum-rpc.publicnode.com",
     explorer: "https://etherscan.io",
     currency: "ETH",
   },
