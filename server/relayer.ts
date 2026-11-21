@@ -5,7 +5,7 @@ const NETWORKS = {
   ETH: {
     chainId: 1,
     name: "Ethereum",
-    rpc: process.env.ETH_RPC_URL || "https://eth.llamarpc.com",
+    rpc: process.env.ETH_RPC_URL || "https://ethereum-rpc.publicnode.com",
   },
   NEOX: {
     chainId: 47763,

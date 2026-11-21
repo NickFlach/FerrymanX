@@ -38,7 +38,7 @@ function computeMessageId(
   );
 }
 
-const ethProvider = new ethers.JsonRpcProvider(process.env.ETH_RPC_URL || "https://eth.llamarpc.com");
+const ethProvider = new ethers.JsonRpcProvider(process.env.ETH_RPC_URL || "https://ethereum-rpc.publicnode.com");
 const neoxProvider = new ethers.JsonRpcProvider(process.env.NEOX_RPC_URL || "https://mainnet-2.rpc.banelabs.org");
 
 export async function registerRoutes(app: Express): Promise<Server> {
